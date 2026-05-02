@@ -126,7 +126,7 @@ def plot_payload_avoided(data: BenchmarkResults, out: Path) -> None:
     ax.set_ylabel("MiB avoided")
     ax.grid(axis="y", alpha=0.25)
     for index, value in enumerate(avoided):
-        ax.text(index, value, f"{value:.0f} MiB", ha="center", va="bottom")
+        ax.text(index, value, f"{value:.1f} MiB", ha="center", va="bottom")
     fig.tight_layout()
     fig.savefig(out, dpi=180)
     plt.close(fig)
@@ -141,19 +141,19 @@ def write_summary(data: BenchmarkResults, out: Path) -> None:
         f"created: {data.created_at}",
         f"platform: {data.platform.system} {data.platform.release} {data.platform.machine}",
         "",
-        "+-----------+-----------+------------+------------+---------+---------------+",
-        "| profile   | worktrees | git sec    | cow sec    | ratio   | payload saved |",
-        "+===========+===========+============+============+=========+===============+",
+        "+-----------+-----------+------------+------------+---------+-------------------+",
+        "| profile   | worktrees | git sec    | cow sec    | ratio   | payload saved MiB |",
+        "+===========+===========+============+============+=========+===================+",
     ]
     for git, cowtree in zip(series.git, series.cowtree, strict=True):
         ratio = git.median_elapsed_seconds / cowtree.median_elapsed_seconds
         saved = mib(git.payload_copied_bytes - cowtree.payload_copied_bytes)
         row = (
             f"| {git.profile:<9} | {git.worktrees:<9} | {git.median_elapsed_seconds:<10.3f} | "
-            f"{cowtree.median_elapsed_seconds:<10.3f} | {ratio:<7.2f} | {saved:<13.0f} |"
+            f"{cowtree.median_elapsed_seconds:<10.3f} | {ratio:<7.2f} | {saved:<17.1f} |"
         )
         lines.append(row)
-        lines.append("+-----------+-----------+------------+------------+---------+---------------+")
+        lines.append("+-----------+-----------+------------+------------+---------+-------------------+")
     lines.append("")
     out.write_text("\n".join(lines) + "\n")
 
