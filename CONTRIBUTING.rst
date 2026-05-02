@@ -3,6 +3,11 @@ contributing
 
 Use small commits with conventional commit messages.
 
+There is no CLA.
+
+PRs from unknown contributors are gated by Vouch. Ask for a maintainer to vouch
+for you on an issue before opening a substantial PR.
+
 Setup
 -----
 

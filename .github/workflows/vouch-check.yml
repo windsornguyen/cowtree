@@ -1,0 +1,21 @@
+name: "Vouch: Check PR"
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mitchellh/vouch/action/setup-vouch@main
+      - uses: mitchellh/vouch/action/check-pr@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          auto-close: true
+          vouched-file: "VOUCHED.td"

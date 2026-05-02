@@ -1,0 +1,22 @@
+name: "Vouch: Manage"
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  manage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mitchellh/vouch/action/setup-vouch@main
+      - uses: mitchellh/vouch/action/manage-by-issue@main
+        with:
+          issue-id: ${{ github.event.issue.number }}
+          comment-id: ${{ github.event.comment.id }}
+          vouched-file: "VOUCHED.td"
