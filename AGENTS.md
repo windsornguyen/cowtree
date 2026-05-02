@@ -10,4 +10,6 @@
 - Return structured values as classes, not loose dictionaries.
 - Save return values to a named variable before returning them.
 - Keep subprocess commands as `list[str]`; never build shell command strings.
+- Use `uv` for package management, commands, lockfiles, and builds.
+- Do not use `pip`, `poetry`, or `requirements.txt`.
 - Fail closed with typed errors.

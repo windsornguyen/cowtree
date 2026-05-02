@@ -3,6 +3,9 @@ contributing
 
 Use small commits with conventional commit messages.
 
+Use ``uv`` for package management. Do not use ``pip``, ``poetry``, or
+``requirements.txt`` in this repo.
+
 There is no CLA.
 
 PRs from unknown contributors are gated by Vouch. Ask for a maintainer to vouch
@@ -21,11 +24,20 @@ Checks
 
 ::
 
+    $ uv lock --check
     $ uv run ruff check .
     $ uv run ruff format --check .
     $ uv run ty check
     $ uv run pytest
     $ uv build
+
+Dependencies
+------------
+
+Use ``uv add`` and ``uv remove`` for dependency edits. Use ``--group`` for
+local development tools and ``--optional`` for published extras.
+
+Do not edit ``uv.lock`` by hand.
 
 Benchmark changes should also regenerate plots:
 

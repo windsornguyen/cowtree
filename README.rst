@@ -63,6 +63,9 @@ If CoW is unavailable, cowtree fails.
 Development
 -----------
 
+``uv`` is the package manager for this repository. It owns the virtual
+environment, lockfile, dependency groups, test commands, and builds.
+
 ::
 
     $ uv sync --group dev
@@ -70,6 +73,7 @@ Development
     $ uv run ruff format --check .
     $ uv run pytest
     $ uv run ty check
+    $ uv lock --check
 
 Install local hooks with:
 
