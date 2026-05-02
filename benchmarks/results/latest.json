@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-05-02T19:15:45.609578+00:00",
+  "platform": {
+    "system": "Darwin",
+    "release": "24.6.0",
+    "machine": "arm64",
+    "python": "3.14.0"
+  },
+  "profiles": [
+    {
+      "name": "basic",
+      "worktrees": 1,
+      "files": 128,
+      "bytes_per_file": 4096,
+      "description": "one small worktree"
+    },
+    {
+      "name": "average",
+      "worktrees": 4,
+      "files": 512,
+      "bytes_per_file": 8192,
+      "description": "several medium worktrees"
+    },
+    {
+      "name": "intensive",
+      "worktrees": 12,
+      "files": 1024,
+      "bytes_per_file": 16384,
+      "description": "many larger worktrees"
+    }
+  ],
+  "runs": [
+    {
+      "profile": "basic",
+      "method": "git",
+      "iteration": 0,
+      "elapsed_seconds": 0.04130541707854718,
+      "worktrees": 1,
+      "files": 128,
+      "tracked_bytes": 524288,
+      "fleet_payload_bytes": 524288,
+      "payload_copied_bytes": 524288
+    },
+    {
+      "profile": "basic",
+      "method": "cowtree",
+      "iteration": 0,
+      "elapsed_seconds": 0.3432401670143008,
+      "worktrees": 1,
+      "files": 128,
+      "tracked_bytes": 524288,
+      "fleet_payload_bytes": 524288,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "basic",
+      "method": "git",
+      "iteration": 1,
+      "elapsed_seconds": 0.039250707952305675,
+      "worktrees": 1,
+      "files": 128,
+      "tracked_bytes": 524288,
+      "fleet_payload_bytes": 524288,
+      "payload_copied_bytes": 524288
+    },
+    {
+      "profile": "basic",
+      "method": "cowtree",
+      "iteration": 1,
+      "elapsed_seconds": 0.32718087499961257,
+      "worktrees": 1,
+      "files": 128,
+      "tracked_bytes": 524288,
+      "fleet_payload_bytes": 524288,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "average",
+      "method": "git",
+      "iteration": 0,
+      "elapsed_seconds": 0.35101308301091194,
+      "worktrees": 4,
+      "files": 512,
+      "tracked_bytes": 4194304,
+      "fleet_payload_bytes": 16777216,
+      "payload_copied_bytes": 16777216
+    },
+    {
+      "profile": "average",
+      "method": "cowtree",
+      "iteration": 0,
+      "elapsed_seconds": 1.5354530420154333,
+      "worktrees": 4,
+      "files": 512,
+      "tracked_bytes": 4194304,
+      "fleet_payload_bytes": 16777216,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "average",
+      "method": "git",
+      "iteration": 1,
+      "elapsed_seconds": 0.4039819580502808,
+      "worktrees": 4,
+      "files": 512,
+      "tracked_bytes": 4194304,
+      "fleet_payload_bytes": 16777216,
+      "payload_copied_bytes": 16777216
+    },
+    {
+      "profile": "average",
+      "method": "cowtree",
+      "iteration": 1,
+      "elapsed_seconds": 1.6229093339061365,
+      "worktrees": 4,
+      "files": 512,
+      "tracked_bytes": 4194304,
+      "fleet_payload_bytes": 16777216,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "intensive",
+      "method": "git",
+      "iteration": 0,
+      "elapsed_seconds": 1.9246461659204215,
+      "worktrees": 12,
+      "files": 1024,
+      "tracked_bytes": 16777216,
+      "fleet_payload_bytes": 201326592,
+      "payload_copied_bytes": 201326592
+    },
+    {
+      "profile": "intensive",
+      "method": "cowtree",
+      "iteration": 0,
+      "elapsed_seconds": 6.297563500003889,
+      "worktrees": 12,
+      "files": 1024,
+      "tracked_bytes": 16777216,
+      "fleet_payload_bytes": 201326592,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "intensive",
+      "method": "git",
+      "iteration": 1,
+      "elapsed_seconds": 1.9443443330237642,
+      "worktrees": 12,
+      "files": 1024,
+      "tracked_bytes": 16777216,
+      "fleet_payload_bytes": 201326592,
+      "payload_copied_bytes": 201326592
+    },
+    {
+      "profile": "intensive",
+      "method": "cowtree",
+      "iteration": 1,
+      "elapsed_seconds": 6.213168499991298,
+      "worktrees": 12,
+      "files": 1024,
+      "tracked_bytes": 16777216,
+      "fleet_payload_bytes": 201326592,
+      "payload_copied_bytes": 0
+    }
+  ],
+  "summary": [
+    {
+      "profile": "average",
+      "method": "cowtree",
+      "runs": 2,
+      "median_elapsed_seconds": 1.5791811879607849,
+      "min_elapsed_seconds": 1.5354530420154333,
+      "max_elapsed_seconds": 1.6229093339061365,
+      "worktrees": 4,
+      "files": 512,
+      "tracked_bytes": 4194304,
+      "fleet_payload_bytes": 16777216,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "average",
+      "method": "git",
+      "runs": 2,
+      "median_elapsed_seconds": 0.3774975205305964,
+      "min_elapsed_seconds": 0.35101308301091194,
+      "max_elapsed_seconds": 0.4039819580502808,
+      "worktrees": 4,
+      "files": 512,
+      "tracked_bytes": 4194304,
+      "fleet_payload_bytes": 16777216,
+      "payload_copied_bytes": 16777216
+    },
+    {
+      "profile": "basic",
+      "method": "cowtree",
+      "runs": 2,
+      "median_elapsed_seconds": 0.3352105210069567,
+      "min_elapsed_seconds": 0.32718087499961257,
+      "max_elapsed_seconds": 0.3432401670143008,
+      "worktrees": 1,
+      "files": 128,
+      "tracked_bytes": 524288,
+      "fleet_payload_bytes": 524288,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "basic",
+      "method": "git",
+      "runs": 2,
+      "median_elapsed_seconds": 0.04027806251542643,
+      "min_elapsed_seconds": 0.039250707952305675,
+      "max_elapsed_seconds": 0.04130541707854718,
+      "worktrees": 1,
+      "files": 128,
+      "tracked_bytes": 524288,
+      "fleet_payload_bytes": 524288,
+      "payload_copied_bytes": 524288
+    },
+    {
+      "profile": "intensive",
+      "method": "cowtree",
+      "runs": 2,
+      "median_elapsed_seconds": 6.2553659999975935,
+      "min_elapsed_seconds": 6.213168499991298,
+      "max_elapsed_seconds": 6.297563500003889,
+      "worktrees": 12,
+      "files": 1024,
+      "tracked_bytes": 16777216,
+      "fleet_payload_bytes": 201326592,
+      "payload_copied_bytes": 0
+    },
+    {
+      "profile": "intensive",
+      "method": "git",
+      "runs": 2,
+      "median_elapsed_seconds": 1.9344952494720928,
+      "min_elapsed_seconds": 1.9246461659204215,
+      "max_elapsed_seconds": 1.9443443330237642,
+      "worktrees": 12,
+      "files": 1024,
+      "tracked_bytes": 16777216,
+      "fleet_payload_bytes": 201326592,
+      "payload_copied_bytes": 201326592
+    }
+  ]
+}
