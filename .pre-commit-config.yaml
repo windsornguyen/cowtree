@@ -37,3 +37,9 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+
+      - id: mkdocs
+        name: mkdocs build
+        entry: uv run --group docs mkdocs build --strict
+        language: system
+        pass_filenames: false

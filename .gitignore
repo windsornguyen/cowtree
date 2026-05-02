@@ -5,5 +5,5 @@
 __pycache__/
 build/
 dist/
+site/
 *.egg-info/
-

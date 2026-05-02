@@ -1,0 +1,18 @@
+site_name: cowtree
+site_description: Copy-on-write Git worktrees for agent fleets
+site_author: Windsor Nguyen
+site_url: https://windsornguyen.com/projects/cowtree/docs/
+repo_url: https://github.com/windsornguyen/cowtree
+repo_name: windsornguyen/cowtree
+edit_uri: ""
+
+theme:
+  name: mkdocs
+  locale: en
+
+nav:
+  - Overview: index.md
+  - Filesystems: filesystems.md
+  - Rust Extension: rust-extension.md
+
+strict: true

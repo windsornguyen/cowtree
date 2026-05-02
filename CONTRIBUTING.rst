@@ -31,6 +31,12 @@ Checks
     $ uv run pytest
     $ uv build
 
+Docs changes should also build the docs site:
+
+::
+
+    $ uv run --group docs mkdocs build --strict
+
 Dependencies
 ------------
 

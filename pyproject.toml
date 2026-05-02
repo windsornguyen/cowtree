@@ -51,6 +51,9 @@ dev = [
     { include-group = "lint" },
     { include-group = "test" },
 ]
+docs = [
+    "mkdocs>=1.6.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/windsornguyen/cowtree"

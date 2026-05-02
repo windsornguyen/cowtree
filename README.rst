@@ -84,6 +84,6 @@ Install local hooks with:
 Inline tests live beside the code and are stripped from builds by
 ``inline-tests``.
 
-See ``benchmarks/`` for the space-efficiency plots and
-``docs/filesystems.rst`` for the filesystem validation matrix. See
-``docs/rust-extension.rst`` for the optional Rust acceleration path.
+See ``benchmarks/`` for the space-efficiency plots, ``docs/filesystems.md`` for
+the filesystem validation matrix, and ``docs/rust-extension.md`` for the
+optional Rust acceleration path.
