@@ -1,7 +1,8 @@
 security
 ========
 
-Please report security issues privately to ``security@dedaluslabs.ai``.
+Please report security issues privately through GitHub private vulnerability
+reporting when it is available.
 
 Do not open a public issue for a vulnerability before maintainers have had a
 chance to triage it.

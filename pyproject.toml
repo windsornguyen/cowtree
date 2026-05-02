@@ -9,7 +9,7 @@ description = "Copy-on-write git worktrees for AI agent fleets"
 readme = "README.rst"
 requires-python = ">=3.10"
 license = "MIT"
-authors = [{ name = "Windsor Nguyen", email = "oss@dedaluslabs.ai" }]
+authors = [{ name = "Windsor Nguyen" }]
 keywords = ["git", "worktree", "copy-on-write", "cow", "agents"]
 classifiers = [
     "Development Status :: 3 - Alpha",
