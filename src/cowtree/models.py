@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from enum import Enum
+import json
 from pathlib import Path
 
 from inline_tests import test
-from pydantic import BaseModel, ConfigDict, Field
 
 
 class FilesystemKind(str, Enum):
@@ -18,19 +19,17 @@ class CloneTool(str, Enum):
     GNU_CP_REFLINK = "cp --reflink=always"
 
 
-class CommandResult(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    argv: list[str] = Field(min_length=1)
+@dataclass(frozen=True)
+class CommandResult:
+    argv: list[str]
     returncode: int
     stdout: str = ""
     stderr: str = ""
 
 
-class WorktreeAddRequest(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
-    args: list[str] = Field(default_factory=list)
+@dataclass(frozen=True)
+class WorktreeAddRequest:
+    args: list[str] = field(default_factory=list)
     source: Path | None = None
 
     def git_args(self) -> list[str]:
@@ -38,19 +37,29 @@ class WorktreeAddRequest(BaseModel):
         return args
 
 
-class Worktree(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
-
+@dataclass(frozen=True)
+class Worktree:
     path: Path
     head: str | None = None
     branch: str | None = None
     detached: bool = False
     prunable: bool = False
 
+    def to_json_text(self) -> str:
+        text = json.dumps(
+            {
+                "path": str(self.path),
+                "head": self.head,
+                "branch": self.branch,
+                "detached": self.detached,
+                "prunable": self.prunable,
+            }
+        )
+        return text
 
-class DoctorReport(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+@dataclass(frozen=True)
+class DoctorReport:
     path: Path
     filesystem: FilesystemKind
     clone_tool: CloneTool | None = None
@@ -72,3 +81,11 @@ def strips_cow_marker_from_git_args() -> None:
 def reports_support_from_clone_tool() -> None:
     report = DoctorReport(path=Path("."), filesystem=FilesystemKind.APFS, clone_tool=CloneTool.MACOS_CLONEFILE)
     assert report.supported is True
+
+
+@test
+def serializes_worktree_paths_as_strings() -> None:
+    worktree = Worktree(path=Path("/repo/wt"), head="abc", detached=True)
+    assert worktree.to_json_text() == (
+        '{"path": "/repo/wt", "head": "abc", "branch": null, "detached": true, "prunable": false}'
+    )

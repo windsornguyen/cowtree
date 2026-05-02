@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 def doctor(path: Path, runner: CommandRunner | None = None) -> DoctorReport:
     runner = runner or CommandRunner()
     resolved = path.resolve()
-    if platform.system() == "Darwin":
+    system = platform.system()
+    if system == "Darwin":
         filesystem = darwin_filesystem_type(resolved, runner)
         if filesystem == "apfs":
             report = DoctorReport(
@@ -36,14 +37,14 @@ def doctor(path: Path, runner: CommandRunner | None = None) -> DoctorReport:
         report = DoctorReport(path=resolved, filesystem=FilesystemKind.UNSUPPORTED, reason=f"{filesystem} is not APFS")
         return report
 
-    if platform.system() == "Linux":
+    if system == "Linux":
         report = linux_reflink_report(resolved, runner)
         return report
 
     report = DoctorReport(
         path=resolved,
         filesystem=FilesystemKind.UNSUPPORTED,
-        reason=f"{platform.system()} is unsupported",
+        reason=f"{system} is unsupported",
     )
     return report
 
@@ -69,15 +70,16 @@ def clone_regular_file(source: Path, target: Path, runner: CommandRunner | None 
     if target.exists() or target.is_symlink():
         raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"destination already exists: {target}")
 
-    if platform.system() == "Darwin":
+    system = platform.system()
+    if system == "Darwin":
         clonefile(source, target)
         return
 
-    if platform.system() == "Linux":
+    if system == "Linux":
         runner.run(["cp", "--reflink=always", "--preserve=mode,timestamps", str(source), str(target)])
         return
 
-    raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, f"{platform.system()} is unsupported")
+    raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, f"{system} is unsupported")
 
 
 def clonefile(source: Path, target: Path) -> None:

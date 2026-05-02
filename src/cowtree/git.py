@@ -64,30 +64,31 @@ def parse_worktree_porcelain(data: str) -> list[Worktree]:
 
     worktrees: list[Worktree] = []
     for record in records:
-        values: dict[str, str | bool] = {}
+        path: str | None = None
+        head_value: str | None = None
+        branch_value: str | None = None
+        detached = False
+        prunable = False
         for field in record:
             if field.startswith("worktree "):
-                values["path"] = field.removeprefix("worktree ")
+                path = field.removeprefix("worktree ")
             elif field.startswith("HEAD "):
-                values["head"] = field.removeprefix("HEAD ")
+                head_value = field.removeprefix("HEAD ")
             elif field.startswith("branch "):
-                values["branch"] = field.removeprefix("branch ")
+                branch_value = field.removeprefix("branch ")
             elif field == "detached":
-                values["detached"] = True
+                detached = True
             elif field.startswith("prunable"):
-                values["prunable"] = True
-        path = values.get("path")
-        if not isinstance(path, str):
+                prunable = True
+        if path is None:
             raise CowtreeError(CowtreeErrorCode.WORKTREE_NOT_FOUND, "git worktree list returned a record without path")
-        head_value = values.get("head")
-        branch_value = values.get("branch")
         worktrees.append(
             Worktree(
                 path=Path(path),
-                head=head_value if isinstance(head_value, str) else None,
-                branch=branch_value if isinstance(branch_value, str) else None,
-                detached=values.get("detached") is True,
-                prunable=values.get("prunable") is True,
+                head=head_value,
+                branch=branch_value,
+                detached=detached,
+                prunable=prunable,
             )
         )
     return worktrees

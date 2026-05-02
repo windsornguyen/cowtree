@@ -26,7 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
-dependencies = ["pydantic>=2.8"]
+dependencies = []
 
 [project.scripts]
 cowtree = "cowtree.cli:main"
@@ -57,7 +57,7 @@ Homepage = "https://github.com/windsornguyen/cowtree"
 Repository = "https://github.com/windsornguyen/cowtree"
 Issues = "https://github.com/windsornguyen/cowtree/issues"
 
-[tool.hatch.build]
+[tool.hatch.build.targets.wheel]
 packages = ["src/cowtree"]
 
 [tool.hatch.build.hooks.inline_tests]

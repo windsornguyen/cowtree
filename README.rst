@@ -43,7 +43,7 @@ The public interface is intentionally small:
 * ``cowtree remove [--force] <path>``
 * ``cowtree doctor [path]``
 
-The Python API uses typed Pydantic models and subprocess argv lists. No shell
+The Python API uses typed frozen dataclasses and subprocess argv lists. No shell
 strings are part of the contract.
 
 What it is not

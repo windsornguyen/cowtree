@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
@@ -19,13 +18,6 @@ if TYPE_CHECKING:
 Handler = Callable[[list[str]], int]
 
 
-@dataclass(frozen=True)
-class Command:
-    name: str
-    help: str
-    run: Handler
-
-
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     cli = CowtreeCLI()
@@ -39,12 +31,12 @@ def main(argv: list[str] | None = None) -> int:
 
 class CowtreeCLI:
     def __init__(self) -> None:
-        self.commands = {
-            "add": Command("add", "create a CoW worktree", self.add),
-            "list": Command("list", "list git worktrees", self.list_cmd),
-            "remove": Command("remove", "remove a git worktree", self.remove),
-            "doctor": Command("doctor", "show CoW support for a path", self.doctor),
-            "help": Command("help", "show help", self.help),
+        self.commands: dict[str, Handler] = {
+            "add": self.add,
+            "list": self.list_cmd,
+            "remove": self.remove,
+            "doctor": self.doctor,
+            "help": self.help,
         }
 
     def run(self, argv: list[str]) -> int:
@@ -54,7 +46,7 @@ class CowtreeCLI:
             print(f"cowtree: unknown command {command_name}", file=sys.stderr)
             code = self.help([])
             return code
-        code = command.run(argv[1:])
+        code = command(argv[1:])
         return code
 
     def add(self, argv: list[str]) -> int:
@@ -69,7 +61,7 @@ class CowtreeCLI:
         source = Path(source_args[0]) if source_args else None
         worktrees = list_all_worktrees(source)
         if json_output:
-            print("[" + ",".join(worktree.model_dump_json() for worktree in worktrees) + "]")
+            print("[" + ",".join(worktree.to_json_text() for worktree in worktrees) + "]")
         else:
             for worktree in worktrees:
                 suffix = ""
