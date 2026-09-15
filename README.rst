@@ -220,6 +220,15 @@ for a future metadata coordinator. Its bounded model and proof limits are
 documented separately. These operations are not part of the current CLI or
 Python API.
 
+Contributing
+------------
+
+New external contributors must open a
+`Contribution interest issue <https://github.com/windsornguyen/cowtree/issues/new?template=contribution.yml>`_
+and receive a maintainer's vouch before opening a PR. See the
+`contribution guide <CONTRIBUTING.rst>`_ for the process, existing-contributor
+access, and development checks. Bug reports and questions do not require a vouch.
+
 Development
 -----------
 
