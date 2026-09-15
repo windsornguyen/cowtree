@@ -129,3 +129,16 @@ partial state counts are witness-search results, not completed safety checks.
 The runner requires exit status 12, the exact named violation, and a trace for
 each. The broken-fence run validates that removing the admission check is
 observable by the selected safety property.
+
+## Batched publication checks
+
+The additional [FencedPublish model](FencedPublish.rst) freezes proposal origins
+and tokens before publication, permits disjoint batches, and checks finite
+induction from arbitrary invariant-satisfying states. Its stale-base witness
+requires a value-changing submission after another writer changes a disjoint
+path. It has its own pinned tool and configurations.
+
+This is a separate abstraction: it omits Workspace's reservation activation,
+editable views and drop lifecycle. Neither model establishes refinement of the
+other or of the runtime. The guide records the assumptions and reproduction
+commands for its safety, induction, mutation and witness cases.
