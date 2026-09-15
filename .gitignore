@@ -8,3 +8,6 @@ dist/
 *.egg-info/
 
 target/
+node_modules/
+!.github/actions/ci/*/dist/
+.tools/
