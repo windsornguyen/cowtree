@@ -4,6 +4,10 @@ on:
   issue_comment:
     types: [created]
 
+concurrency:
+  group: vouch-manage
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
@@ -11,14 +15,18 @@ permissions:
 
 jobs:
   manage:
+    if: github.event.issue.pull_request == null
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: mitchellh/vouch/action/setup-vouch@main
-      - uses: mitchellh/vouch/action/manage-by-issue@main
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: mitchellh/vouch/action/manage-by-issue@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
+          repo: ${{ github.repository }}
           issue-id: ${{ github.event.issue.number }}
           comment-id: ${{ github.event.comment.id }}
           vouched-file: "VOUCHED.td"
+          roles: admin,maintain,write
