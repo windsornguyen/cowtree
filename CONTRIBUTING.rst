@@ -104,3 +104,18 @@ Scope
 ``cowtree`` should stay narrow. It creates and manages CoW-backed Git
 worktrees. Agent orchestration, dashboards, branch policy, and process
 management belong in callers such as Wingman.
+
+Rust metadata backend
+---------------------
+
+Use Cargo for ``crates/cowtree-metadata`` dependencies and its committed lockfile.
+Python dependency management continues to use ``uv``. Rust changes must pass::
+
+    cargo fmt --all --check
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    cargo test --locked --workspace --all-targets --all-features
+    cargo run --locked -p cowtree-metadata --example publish
+
+``fault-injection`` enables process-crash and bounded-pause hooks for tests only.
+Default builds do not respond to those environment variables. Document the actual
+fault boundary tested; process termination does not prove power-loss durability.
