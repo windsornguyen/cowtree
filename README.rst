@@ -261,6 +261,13 @@ stripped from builds by ``inline-tests``. Install local hooks with
 and the `Rust extension proposal <docs/rust-extension.rst>`_ for optional
 acceleration.
 
+Batched publication verification
+---------------------------------
+
+The `FencedPublish checks <specs/FencedPublish.rst>`_ complement the workspace
+model with captured proposal tokens, disjoint batches, and finite induction.
+They validate a bounded protocol model and do not add worktree API operations.
+
 Local metadata authority
 ------------------------
 
