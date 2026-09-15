@@ -255,3 +255,17 @@ stripped from builds by ``inline-tests``. Install local hooks with
 ``uv run prek install``. See `benchmarks <benchmarks/>`_ for benchmark fixtures
 and the `Rust extension proposal <docs/rust-extension.rst>`_ for optional
 acceleration.
+
+Local metadata authority
+------------------------
+
+The optional Rust ``cowtree-metadata`` crate implements a single-host SQLite WAL
+metadata authority with fenced path reservations, immutable snapshots, retry
+receipts, and retention. Its library and JSON operation contracts are documented
+in `crates/cowtree-metadata/README.md <crates/cowtree-metadata/README.md>`_.
+Run the complete publication example with::
+
+    cargo run --locked -p cowtree-metadata --example publish
+
+The Python Git-worktree API does not use this backend yet. Its activation
+operation installs a logical view; filesystem installation is a separate step.

@@ -1,0 +1,22 @@
+[package]
+name = "cowtree-metadata"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+sha2 = "0.10"
+hex = "0.4"
+tempfile = "3"
+rustix = { version = "1.1", features = ["fs"] }
+
+[features]
+fault-injection = []
+
+[lints]
+workspace = true
