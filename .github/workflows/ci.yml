@@ -76,3 +76,28 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y btrfs-progs xfsprogs
       - name: Verify reflink support and refusal
         run: sudo env "PATH=$PATH" bash scripts/fs_matrix.sh
+
+  specification:
+    name: Workspace protocol model
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check safety, witnesses, and fencing mutation
+        run: uv run --locked --no-default-groups python scripts/check_specs.py --cache "$RUNNER_TEMP/cowtree-tla"
+      - name: Save checker evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workspace-protocol-evidence
+          path: |
+            ${{ runner.temp }}/cowtree-tla/java-version.txt
+            ${{ runner.temp }}/cowtree-tla/*/tlc.log
+            ${{ runner.temp }}/cowtree-tla/*/*.tla
+            ${{ runner.temp }}/cowtree-tla/*/*.cfg
+          if-no-files-found: error
