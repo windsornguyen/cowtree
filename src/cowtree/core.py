@@ -1,59 +1,60 @@
+"""Create, list, remove, and inspect CoW worktrees under the README contract."""
+
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import os
 from pathlib import Path
-
-from inline_tests import test
+import stat
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
-from cowtree.fs import clone_regular_file, doctor, ensure_cow_supported
-from cowtree.git import (
-    ensure_clean_source,
-    ensure_full_checkout,
-    ensure_same_head,
-    git_capture,
-    list_worktrees,
-    source_root,
-    status_porcelain,
-    worktree_paths,
+from cowtree.fs import doctor
+from cowtree.git import GitRepository, resolve_path
+from cowtree.native import clone_regular_file
+from cowtree.types import (
+    Checkout,
+    DoctorReport,
+    FileMode,
+    TrackedFile,
+    Worktree,
+    WorktreeAddRequest,
 )
-from cowtree.models import DoctorReport, Worktree, WorktreeAddRequest
+
+
+# --- Public operations ---
 
 
 def add_worktree(request: WorktreeAddRequest, runner: CommandRunner | None = None) -> Worktree:
-    runner = runner or CommandRunner()
-    source = source_root(runner, request.source)
-    args = request.git_args()
-    if "--checkout" in args:
-        raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "--checkout conflicts with CoW checkout")
-
-    ensure_clean_source(runner, source)
-    ensure_full_checkout(runner, source)
-
-    before = worktree_paths(runner, source)
-    runner.run(["git", "-C", str(source), "worktree", "add", "--no-checkout", *args])
-    target = find_added_worktree(source, before, runner)
-
+    """Clone a clean source at its current commit and create the requested branch."""
+    if runner is None:
+        runner = CommandRunner()
     try:
-        ensure_same_head(runner, source, target)
-        ensure_cow_supported(source, target, runner)
-        copy_tracked_files(source, target, runner)
-        runner.run(["git", "-C", str(target), "reset", "--mixed", "-q", "HEAD"])
-        dirty = status_porcelain(runner, target)
-        if dirty:
-            raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"target is dirty after CoW checkout:\n{dirty}")
-    except BaseException:
-        runner.run(["git", "-C", str(source), "worktree", "remove", "--force", str(target)], check=False)
-        raise
-
-    worktree = next(worktree for worktree in list_worktrees(runner, source) if worktree.path == target)
+        repository = GitRepository.discover(io=runner, source=request.source)
+        with repository.lock():
+            creation = WorktreeCreation.prepare(repository=repository, request=request)
+            worktree = creation.run()
+    except OSError as error:
+        raise CowtreeError(
+            code=CowtreeErrorCode.COMMAND_FAILED, message=f"add failed: {error}"
+        ) from error
     return worktree
 
 
-def list_all_worktrees(source: Path | None = None, runner: CommandRunner | None = None) -> list[Worktree]:
-    runner = runner or CommandRunner()
-    worktrees = list_worktrees(runner, source_root(runner, source))
+def list_all_worktrees(
+    source: Path | None = None, runner: CommandRunner | None = None
+) -> list[Worktree]:
+    """Return every Git worktree, including checkouts created outside cowtree."""
+    if runner is None:
+        runner = CommandRunner()
+    try:
+        repository = GitRepository.discover(io=runner, source=source)
+        with repository.lock():
+            worktrees = repository.worktrees()
+    except OSError as error:
+        raise CowtreeError(
+            code=CowtreeErrorCode.COMMAND_FAILED, message=f"list failed: {error}"
+        ) from error
     return worktrees
 
 
@@ -64,100 +65,202 @@ def remove_worktree(
     force: bool = False,
     runner: CommandRunner | None = None,
 ) -> None:
-    runner = runner or CommandRunner()
-    repo = source_root(runner, source)
-    args = ["git", "-C", str(repo), "worktree", "remove"]
-    if force:
-        args.append("--force")
-    args.append(str(path))
-    runner.run(args)
+    """Remove a linked worktree using Git's dirty and lock checks. Preserve its branch."""
+    if runner is None:
+        runner = CommandRunner()
+    try:
+        target = resolve_path(path=path)
+        repository = GitRepository.discover(io=runner, source=source)
+        with repository.lock():
+            args = ["worktree", "remove"]
+            if force:
+                args.append("--force")
+            repository.run(args=[*args, "--", str(target)])
+    except OSError as error:
+        raise CowtreeError(
+            code=CowtreeErrorCode.COMMAND_FAILED, message=f"remove failed: {error}"
+        ) from error
 
 
 def inspect_path(path: Path, runner: CommandRunner | None = None) -> DoctorReport:
-    report = doctor(path, runner)
+    """Probe native CoW support in an existing directory without requiring Git."""
+    report = doctor(path=path, runner=runner)
     return report
 
 
-def find_added_worktree(source: Path, before: set[Path], runner: CommandRunner) -> Path:
-    after = worktree_paths(runner, source)
-    added = after - before
-    if len(added) != 1:
-        raise CowtreeError(CowtreeErrorCode.WORKTREE_NOT_FOUND, f"expected one new worktree, found {len(added)}")
-    target = next(iter(added)).resolve()
-    return target
+@dataclass
+class WorktreeCreation:
+    """Own one pinned checkout and only the directories created by its transaction."""
 
+    repository: GitRepository
+    request: WorktreeAddRequest
+    checkout: Checkout
+    target: Path
+    created: list[Path] = field(default_factory=list, init=False)
 
-def copy_tracked_files(source: Path, target: Path, runner: CommandRunner) -> None:
-    records = git_capture(runner, ["-C", str(source), "ls-files", "-s", "-z"]).split("\0")
-    for record in records:
-        if not record:
-            continue
-        meta, path = record.split("\t", 1)
-        mode = meta.split()[0]
-        src = source / path
-        dst = target / path
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if mode in ("100644", "100755"):
-            clone_regular_file(src, dst, runner)
-        elif mode == "120000":
-            os.symlink(os.readlink(src), dst)
-        elif mode == "160000":
-            raise CowtreeError(CowtreeErrorCode.SUBMODULE_UNSUPPORTED, f"submodules are not supported yet: {path}")
-        else:
-            raise CowtreeError(CowtreeErrorCode.UNSUPPORTED_MODE, f"unsupported git file mode {mode} for {path}")
+    @classmethod
+    def prepare(cls, repository: GitRepository, request: WorktreeAddRequest) -> WorktreeCreation:
+        """Resolve the destination and pin a valid source before acquiring ownership."""
+        target = request.path.absolute()
+        if os.path.lexists(target):
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, f"destination already exists: {target}"
+            )
+        target = resolve_path(path=target)
+        checkout = repository.snapshot()
+        requested = repository.capture(
+            args=[
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                f"{request.commitish}^{{commit}}",
+            ]
+        ).removesuffix("\n")
+        if requested != checkout.commit:
+            raise CowtreeError(
+                CowtreeErrorCode.HEAD_MISMATCH, "requested commit differs from source HEAD"
+            )
+        branch = request.branch
+        if branch is not None:
+            checked = repository.capture(args=["check-ref-format", "--branch", branch])
+            if checked.removesuffix("\n") != branch:
+                raise CowtreeError(
+                    CowtreeErrorCode.INVALID_ARGUMENTS, "branch must be a literal name"
+                )
+            if repository.has_branch(branch=branch):
+                raise CowtreeError(
+                    CowtreeErrorCode.INVALID_ARGUMENTS, f"branch already exists: {branch}"
+                )
+        creation = cls(repository=repository, request=request, checkout=checkout, target=target)
+        return creation
 
+    def run(self) -> Worktree:
+        """Register and populate the worktree. Roll back all owned state on exceptions."""
+        try:
+            self.reserve()
+            self.register()
+            self.copy_files()
+            self.checkout_index()
+            if not self.request.lock:
+                self.repository.run(args=["worktree", "unlock", str(self.target)])
+            worktree = next(
+                tree for tree in self.repository.worktrees() if tree.path == self.target
+            )
+        except BaseException as original:
+            # Roll back cancellation, then re-raise it.
+            try:
+                self.rollback()
+            except (CowtreeError, OSError) as cleanup:
+                raise CowtreeError(
+                    code=CowtreeErrorCode.CLEANUP_FAILED,
+                    message=f"{original}; cleanup failed for {self.target}, "
+                    f"branch {self.request.branch!r}: "
+                    f"{cleanup}; inspect git worktree list and refs",
+                ) from original
+            raise
+        return worktree
 
-@test
-def creates_clean_cow_worktree(tmp_path: Path) -> None:
-    import pytest
+    def reserve(self) -> None:
+        """Check clone support before exclusively creating the target and missing parents."""
+        missing: list[Path] = []
+        parent = self.target.parent
+        while not parent.exists():
+            missing.append(parent)
+            parent = parent.parent
+        if self.repository.path.stat().st_dev != parent.stat().st_dev:
+            raise CowtreeError(
+                CowtreeErrorCode.DIFFERENT_FILESYSTEM, "source and target filesystems differ"
+            )
+        report = doctor(path=parent, runner=self.repository.io)
+        if not report.supported:
+            raise CowtreeError(
+                CowtreeErrorCode.COW_UNAVAILABLE, f"CoW unavailable: {report.reason}"
+            )
+        for directory in [*reversed(missing), self.target]:
+            directory.mkdir()
+            self.created.append(directory)
 
-    runner = CommandRunner()
-    source = tmp_path / "repo"
-    target = tmp_path / "cow"
-    source.mkdir()
-    runner.run(["git", "init", "-q", str(source)])
-    runner.run(["git", "-C", str(source), "config", "user.email", "test@example.com"])
-    runner.run(["git", "-C", str(source), "config", "user.name", "Test"])
-    (source / "a.txt").write_text("one\n")
-    (source / "run.sh").write_text("#!/bin/sh\necho hi\n")
-    (source / "run.sh").chmod(0o755)
-    os.symlink("a.txt", source / "link-a")
-    runner.run(["git", "-C", str(source), "add", "."])
-    runner.run(["git", "-C", str(source), "commit", "-qm", "init"])
+    def register(self) -> None:
+        """Create the locked Git registration at the pinned commit."""
+        args = ["worktree", "add", "--no-checkout", "--lock"]
+        if self.request.reason is not None:
+            args.extend(["--reason", self.request.reason])
+        branch = self.request.branch
+        args.extend(["-b", branch] if branch is not None else ["--detach"])
+        self.repository.run(args=[*args, "--", str(self.target), self.checkout.commit])
 
-    report = doctor(target.parent, runner)
-    if not report.supported:
-        pytest.skip(report.reason or "CoW unavailable")
+    def copy_files(self) -> None:
+        """Populate only paths recorded in the pinned source tree."""
+        for entry in self.checkout.files:
+            self.copy_file(entry=entry)
 
-    worktree = add_worktree(
-        WorktreeAddRequest(source=source, args=["-b", "cow-branch", str(target), "HEAD"]),
-        runner,
-    )
-    assert worktree.path == target.resolve()
-    assert status_porcelain(runner, target) == ""
-    assert os.readlink(target / "link-a") == "a.txt"
-    assert os.access(target / "run.sh", os.X_OK)
+    def copy_file(self, entry: TrackedFile) -> None:
+        """Clone one tracked file or preserve its symlink text."""
+        source = self.repository.path / entry.path
+        target = self.target / entry.path
+        mode = source.lstat().st_mode
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if entry.mode is FileMode.SYMLINK:
+            if not stat.S_ISLNK(mode):
+                raise CowtreeError(
+                    CowtreeErrorCode.DIRTY_SOURCE, f"tracked file type changed: {entry.path}"
+                )
+            os.symlink(os.readlink(source), target)
+            return
+        if not stat.S_ISREG(mode):
+            raise CowtreeError(
+                CowtreeErrorCode.DIRTY_SOURCE, f"tracked file type changed: {entry.path}"
+            )
+        if bool(mode & stat.S_IXUSR) != (entry.mode is FileMode.EXECUTABLE):
+            raise CowtreeError(
+                CowtreeErrorCode.DIRTY_SOURCE, f"tracked executable mode changed: {entry.path}"
+            )
+        clone_regular_file(source=source, target=target)
 
+    def checkout_index(self) -> None:
+        """Build the index and reject changed commits or mismatched target bytes."""
+        target = GitRepository(io=self.repository.io, path=self.target)
+        target.run(
+            args=[
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.ignorestat=false",
+                "reset",
+                "--mixed",
+                "-q",
+                self.checkout.commit,
+            ]
+        )
+        if self.repository.head() != self.checkout.commit:
+            raise CowtreeError(
+                CowtreeErrorCode.HEAD_MISMATCH, "source HEAD changed during CoW checkout"
+            )
+        if target.head() != self.checkout.commit:
+            raise CowtreeError(
+                CowtreeErrorCode.HEAD_MISMATCH, "target HEAD changed during CoW checkout"
+            )
+        if target.status():
+            raise CowtreeError(
+                code=CowtreeErrorCode.DIRTY_SOURCE, message="source changed during CoW checkout"
+            )
 
-@test
-def cleans_up_failed_head_mismatch(tmp_path: Path) -> None:
-    import pytest
-
-    runner = CommandRunner()
-    source = tmp_path / "repo"
-    target = tmp_path / "old"
-    source.mkdir()
-    runner.run(["git", "init", "-q", str(source)])
-    runner.run(["git", "-C", str(source), "config", "user.email", "test@example.com"])
-    runner.run(["git", "-C", str(source), "config", "user.name", "Test"])
-    (source / "a.txt").write_text("one\n")
-    runner.run(["git", "-C", str(source), "add", "."])
-    runner.run(["git", "-C", str(source), "commit", "-qm", "first"])
-    (source / "a.txt").write_text("two\n")
-    runner.run(["git", "-C", str(source), "commit", "-am", "second", "-q"])
-
-    with pytest.raises(CowtreeError) as error:
-        add_worktree(WorktreeAddRequest(source=source, args=["-b", "old-branch", str(target), "HEAD~1"]), runner)
-    assert error.value.code == CowtreeErrorCode.HEAD_MISMATCH
-
-    assert not target.exists()
+    def rollback(self) -> None:
+        """Remove owned registration, branch, and directories in that order."""
+        if self.target in self.created:
+            registered = any(tree.path == self.target for tree in self.repository.worktrees())
+            if registered:
+                self.repository.run(
+                    args=["worktree", "remove", "--force", "--force", str(self.target)]
+                )
+            elif self.target.exists():
+                self.target.rmdir()
+            self.created.remove(self.target)
+            branch = self.request.branch
+            if branch is not None and self.repository.has_branch(branch=branch):
+                # Preserve refs moved by another writer.
+                self.repository.run(
+                    args=["update-ref", "-d", f"refs/heads/{branch}", self.checkout.commit]
+                )
+        for directory in reversed(self.created):
+            directory.rmdir()

@@ -2,7 +2,13 @@ name: "Vouch: Check PR"
 
 on:
   pull_request_target:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: Open PR whose same-repository head branch is selected for this run
+        required: true
+        type: number
 
 permissions:
   pull-requests: write
@@ -10,12 +16,54 @@ permissions:
 
 jobs:
   check:
+    name: Vouch eligibility
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: mitchellh/vouch/action/setup-vouch@main
-      - uses: mitchellh/vouch/action/check-pr@main
+      - name: Resolve the requested PR
+        id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_PR: ${{ inputs.pr-number }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch) pr_number="$DISPATCH_PR" ;;
+            pull_request_target) pr_number="$EVENT_PR" ;;
+            *) echo "::error::Unsupported Vouch event"; exit 1 ;;
+          esac
+          if [[ ! "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::pr-number must be a positive integer"
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" |
+              jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" \
+                '.state == "open" and .head.sha == $sha and .head.repo.full_name == $repo' >/dev/null || {
+                  echo "::error::Select this open PR's current same-repository head branch"
+                  exit 1
+                }
+          fi
+          printf 'number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
+      - name: Read the trusted contribution message
+        uses: actions/checkout@v6
         with:
-          pr-number: ${{ github.event.pull_request.number }}
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: mitchellh/vouch/action/check-pr@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        id: vouch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          pr-number: ${{ steps.request.outputs.number }}
+          require-vouch: true
           auto-close: true
-          vouched-file: "VOUCHED.td"
+          vouched-file: VOUCHED.td
+          template-file: .github/VOUCH_RESPONSE.md
+      - name: Require contributor access
+        env:
+          VOUCH_STATUS: ${{ steps.vouch.outputs.status }}
+        run: |
+          case "$VOUCH_STATUS" in
+            vouched|skipped) printf 'Vouch result: %s\n' "$VOUCH_STATUS" ;;
+            *) echo "::error::Vouch denied contributor access: $VOUCH_STATUS"; exit 1 ;;
+          esac

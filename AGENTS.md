@@ -13,3 +13,14 @@
 - Use `uv` for package management, commands, lockfiles, and builds.
 - Do not use `pip`, `poetry`, or `requirements.txt`.
 - Fail closed with typed errors.
+
+## Contributions
+
+- Follow `CONTRIBUTING.rst` before opening a PR.
+- New external contributors must open a Contribution interest issue and wait for
+  a maintainer's vouch to appear in `VOUCHED.td` on the default branch.
+- The repository owner, collaborators with write access, and contributors already
+  vouched do not need a repeated contribution-interest issue.
+- Do not edit `VOUCHED.td` in a contribution PR to grant yourself access.
+- Link the approved issue in a new contributor's PR and report validation results.
+- A vouch grants contribution access; it does not replace review or required checks.

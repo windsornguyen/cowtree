@@ -1,0 +1,42 @@
+name: Contribution interest
+description: Propose work and request a maintainer's vouch before your first PR.
+title: "Contribution interest: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        New external contributors must discuss their proposed work here and wait
+        for a maintainer's vouch before opening a PR. Read the
+        [contribution guide](https://github.com/windsornguyen/cowtree/blob/main/CONTRIBUTING.rst).
+
+        Already vouched contributors and collaborators with write access do not
+        need to repeat this process. Bug reports and questions do not need a
+        vouch; use a blank issue for those.
+  - type: textarea
+    id: proposed-work
+    attributes:
+      label: Proposed work
+      description: What problem will you address, and what should change? Link related issues.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and approach
+      description: Which parts of cowtree will change? State what is outside the scope.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: How will you show the change works? Include tests and relevant OS or filesystem details.
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribution-process
+    attributes:
+      label: Contribution process
+      options:
+        - label: I will wait for a maintainer's vouch to be recorded on the default branch before opening a PR.
+          required: true
