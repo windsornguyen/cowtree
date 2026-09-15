@@ -211,6 +211,15 @@ recovery guarantee for ``SIGKILL``, power loss, or a host crash. Such failures
 can leave a partially initialized, locked worktree or a newly created branch.
 Inspect and repair that state with Git before reusing the destination.
 
+Workspace protocol proposal
+---------------------------
+
+The `versioned workspace proposal <docs/workspace-protocol.rst>`_ describes
+immutable snapshots, path reservations, fencing tokens, and batched publication
+for a future metadata coordinator. Its bounded model and proof limits are
+documented separately. These operations are not part of the current CLI or
+Python API.
+
 Development
 -----------
 
