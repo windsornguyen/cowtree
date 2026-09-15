@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+import fcntl
 from pathlib import Path
 
 from inline_tests import test
@@ -16,10 +20,18 @@ def git_capture(runner: CommandRunner, args: list[str], *, cwd: Path | None = No
 
 
 def source_root(runner: CommandRunner, source: Path | None) -> Path:
-    cwd = source.resolve() if source else None
+    cwd = resolve_path(source) if source else None
     out = git_capture(runner, ["rev-parse", "--show-toplevel"], cwd=cwd)
-    root = Path(out.strip()).resolve()
+    root = resolve_path(Path(out.removesuffix("\n")))
     return root
+
+
+def resolve_path(path: Path) -> Path:
+    try:
+        resolved = path.resolve()
+    except (RuntimeError, ValueError) as error:
+        raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"invalid path {path}: {error}") from error
+    return resolved
 
 
 def head(runner: CommandRunner, repo: Path) -> str:
@@ -28,7 +40,24 @@ def head(runner: CommandRunner, repo: Path) -> str:
 
 
 def status_porcelain(runner: CommandRunner, repo: Path) -> str:
-    status = git_capture(runner, ["-C", str(repo), "status", "--porcelain=v1", "--untracked-files=no"])
+    status = git_capture(
+        runner,
+        [
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.ignorestat=false",
+            "-c",
+            "core.filemode=true",
+            "-C",
+            str(repo),
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=no",
+            "--ignore-submodules=none",
+        ],
+    )
     return status
 
 
@@ -38,9 +67,38 @@ def config_bool(runner: CommandRunner, repo: Path, key: str) -> bool:
     return enabled
 
 
-def worktree_paths(runner: CommandRunner, repo: Path) -> set[Path]:
-    paths = {worktree.path for worktree in list_worktrees(runner, repo)}
-    return paths
+@contextmanager
+def repository_lock(runner: CommandRunner, repo: Path) -> Iterator[None]:
+    common = git_capture(runner, ["-C", str(repo), "rev-parse", "--path-format=absolute", "--git-common-dir"])
+    # Never unlink this inode: waiters must all lock the same file.
+    with (Path(common.removesuffix("\n")) / "cowtree.lock").open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+@dataclass(frozen=True)
+class TrackedFile:
+    mode: str
+    path: str
+
+
+def tracked_files(runner: CommandRunner, repo: Path, commit: str) -> list[TrackedFile]:
+    data = git_capture(runner, ["-C", str(repo), "ls-tree", "-r", "-z", commit])
+    files: list[TrackedFile] = []
+    for record in data.split("\0"):
+        if not record:
+            continue
+        metadata, path = record.split("\t", 1)
+        mode = metadata.split()[0]
+        if mode == "160000":
+            raise CowtreeError(CowtreeErrorCode.SUBMODULE_UNSUPPORTED, f"submodules are unsupported: {path}")
+        if mode not in ("100644", "100755", "120000"):
+            raise CowtreeError(CowtreeErrorCode.UNSUPPORTED_MODE, f"unsupported tracked mode {mode}: {path}")
+        files.append(TrackedFile(mode=mode, path=path))
+    return files
 
 
 def list_worktrees(runner: CommandRunner, repo: Path) -> list[Worktree]:
@@ -69,6 +127,8 @@ def parse_worktree_porcelain(data: str) -> list[Worktree]:
         branch_value: str | None = None
         detached = False
         prunable = False
+        locked = False
+        reason: str | None = None
         for field in record:
             if field.startswith("worktree "):
                 path = field.removeprefix("worktree ")
@@ -80,6 +140,9 @@ def parse_worktree_porcelain(data: str) -> list[Worktree]:
                 detached = True
             elif field.startswith("prunable"):
                 prunable = True
+            elif field == "locked" or field.startswith("locked "):
+                locked = True
+                reason = field.removeprefix("locked ") if field != "locked" else None
         if path is None:
             raise CowtreeError(CowtreeErrorCode.WORKTREE_NOT_FOUND, "git worktree list returned a record without path")
         worktrees.append(
@@ -89,12 +152,17 @@ def parse_worktree_porcelain(data: str) -> list[Worktree]:
                 branch=branch_value,
                 detached=detached,
                 prunable=prunable,
+                locked=locked,
+                reason=reason,
             )
         )
     return worktrees
 
 
 def ensure_clean_source(runner: CommandRunner, repo: Path) -> None:
+    flags = git_capture(runner, ["-C", str(repo), "ls-files", "-v", "-z"])
+    if any(record and (record[0].islower() or record[0] == "S") for record in flags.split("\0")):
+        raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, "source index has assume-unchanged or skip-worktree entries")
     dirty = status_porcelain(runner, repo)
     if dirty:
         raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, "source has tracked changes")

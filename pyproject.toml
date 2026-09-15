@@ -64,7 +64,7 @@ packages = ["src/cowtree"]
 sources = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["src"]
+testpaths = ["src", "tests"]
 addopts = ["--inline-tests", "--strict-config", "--strict-markers", "--tb=short"]
 pythonpath = ["src"]
 
@@ -125,7 +125,7 @@ max-args = 8
 max-statements = 25
 
 [tool.ty.environment]
-root = ["src", "benchmarks"]
+root = ["src", "benchmarks", "."]
 python-version = "3.10"
 
 [tool.ty.rules]

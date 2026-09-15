@@ -14,6 +14,7 @@ class CowtreeErrorCode(str, Enum):
     COMMAND_FAILED = "command_failed"
     INVALID_ARGUMENTS = "invalid_arguments"
     WORKTREE_NOT_FOUND = "worktree_not_found"
+    CLEANUP_FAILED = "cleanup_failed"
 
 
 class CowtreeError(RuntimeError):

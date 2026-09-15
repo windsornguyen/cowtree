@@ -21,17 +21,22 @@ class CommandRunner:
         if not argv:
             raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "argv must not be empty")
 
-        completed = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, check=False)
+        try:
+            completed = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, check=False)
+        except ValueError as error:
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"invalid command arguments: {error}") from error
+        except OSError as error:
+            raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"cannot run {argv[0]}: {error}") from error
         result = CommandResult(
             argv=argv,
             returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            stdout=completed.stdout.decode("utf-8", "surrogateescape"),
+            stderr=completed.stderr.decode("utf-8", "surrogateescape"),
         )
         if check and completed.returncode != 0:
             raise CowtreeError(
                 CowtreeErrorCode.COMMAND_FAILED,
-                f"{' '.join(argv)} failed with exit code {completed.returncode}: {completed.stderr}{completed.stdout}",
+                f"{' '.join(argv)} failed with exit code {completed.returncode}: {result.stderr}{result.stdout}",
             )
         return result
 

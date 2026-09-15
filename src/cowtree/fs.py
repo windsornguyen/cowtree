@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 import ctypes
 import errno
+import fcntl
 import os
 from pathlib import Path
 import platform
 import plistlib
+import stat
 import tempfile
 from typing import TYPE_CHECKING
 
@@ -23,22 +25,25 @@ if TYPE_CHECKING:
 
 def doctor(path: Path, runner: CommandRunner | None = None) -> DoctorReport:
     runner = runner or CommandRunner()
-    resolved = path.resolve()
+    try:
+        resolved = path.resolve(strict=True)
+        if not resolved.is_dir():
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"doctor requires an existing directory: {path}")
+    except (FileNotFoundError, NotADirectoryError, RuntimeError, ValueError) as error:
+        raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"invalid doctor directory {path}: {error}") from error
+    except OSError as error:
+        raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"cannot inspect {path}: {error}") from error
     system = platform.system()
     if system == "Darwin":
         filesystem = darwin_filesystem_type(resolved, runner)
         if filesystem == "apfs":
-            report = DoctorReport(
-                path=resolved,
-                filesystem=FilesystemKind.APFS,
-                clone_tool=CloneTool.MACOS_CLONEFILE,
-            )
+            report = clone_probe_report(resolved, FilesystemKind.APFS, CloneTool.MACOS_CLONEFILE)
             return report
         report = DoctorReport(path=resolved, filesystem=FilesystemKind.UNSUPPORTED, reason=f"{filesystem} is not APFS")
         return report
 
     if system == "Linux":
-        report = linux_reflink_report(resolved, runner)
+        report = clone_probe_report(resolved, FilesystemKind.REFLINK, CloneTool.LINUX_FICLONE)
         return report
 
     report = DoctorReport(
@@ -65,21 +70,34 @@ def ensure_cow_supported(source: Path, target: Path, runner: CommandRunner | Non
     return report
 
 
-def clone_regular_file(source: Path, target: Path, runner: CommandRunner | None = None) -> None:
-    runner = runner or CommandRunner()
-    if target.exists() or target.is_symlink():
-        raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"destination already exists: {target}")
+def clone_regular_file(source: Path, target: Path) -> None:
+    try:
+        if not stat.S_ISREG(source.lstat().st_mode):
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"source is not a regular file: {source}")
+        if target.exists() or target.is_symlink():
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"destination already exists: {target}")
 
-    system = platform.system()
-    if system == "Darwin":
-        clonefile(source, target)
-        return
+        system = platform.system()
+        if system == "Darwin":
+            clonefile(source, target)
+            return
+        if system == "Linux":
+            reflink(source, target)
+            return
+        raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, f"{system} is unsupported")
+    except OSError as error:
+        raise clone_error(target, error) from error
 
-    if system == "Linux":
-        runner.run(["cp", "--reflink=always", "--preserve=mode,timestamps", str(source), str(target)])
-        return
 
-    raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, f"{system} is unsupported")
+def clone_error(target: Path, error: OSError) -> CowtreeError:
+    if error.errno in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOTTY, errno.EXDEV):
+        code = CowtreeErrorCode.COW_UNAVAILABLE
+    elif error.errno in (errno.EEXIST, errno.ENOENT, errno.ENOTDIR):
+        code = CowtreeErrorCode.INVALID_ARGUMENTS
+    else:
+        code = CowtreeErrorCode.COMMAND_FAILED
+    result = CowtreeError(code, f"CoW clone failed for {target}: {error}")
+    return result
 
 
 def clonefile(source: Path, target: Path) -> None:
@@ -87,12 +105,20 @@ def clonefile(source: Path, target: Path) -> None:
     result = libc.clonefile(os.fsencode(source), os.fsencode(target), 0)
     if result == 0:
         return
-
     err = ctypes.get_errno()
-    reason = os.strerror(err)
-    if err in (errno.ENOTSUP, errno.EXDEV):
-        raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, f"clonefile failed for {target}: {reason}") from None
-    raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"clonefile failed for {target}: {reason}") from None
+    raise clone_error(target, OSError(err, os.strerror(err)))
+
+
+def reflink(source: Path, target: Path) -> None:
+    with source.open("rb") as src, target.open("xb") as dst:
+        try:
+            metadata = os.fstat(src.fileno())
+            fcntl.ioctl(dst.fileno(), 0x40049409, src.fileno())  # Linux FICLONE.
+            os.fchmod(dst.fileno(), stat.S_IMODE(metadata.st_mode))
+            os.utime(dst.fileno(), ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+        except BaseException:
+            target.unlink()
+            raise
 
 
 def darwin_filesystem_type(path: Path, runner: CommandRunner) -> str:
@@ -108,18 +134,28 @@ def darwin_filesystem_type(path: Path, runner: CommandRunner) -> str:
     return name
 
 
-def linux_reflink_report(path: Path, runner: CommandRunner) -> DoctorReport:
+def clone_probe_report(path: Path, filesystem: FilesystemKind, clone_tool: CloneTool) -> DoctorReport:
     try:
         with tempfile.TemporaryDirectory(dir=path) as tmp:
             src = Path(tmp) / "src"
             dst = Path(tmp) / "dst"
-            src.write_text("cowtree probe\n")
-            runner.run(["cp", "--reflink=always", str(src), str(dst)])
+            payload = b"cowtree probe\n"
+            src.write_bytes(payload)
+            clone_regular_file(src, dst)
+            if dst.read_bytes() != payload or src.stat().st_ino == dst.stat().st_ino:
+                raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "CoW probe did not create an independent file")
+            dst.write_bytes(b"changed\n")
+            if src.read_bytes() != payload:
+                raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "CoW probe modified the source")
     except CowtreeError as error:
+        if error.code != CowtreeErrorCode.COW_UNAVAILABLE:
+            raise
         report = DoctorReport(path=path, filesystem=FilesystemKind.UNSUPPORTED, reason=error.message)
         return report
+    except OSError as error:
+        raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"cannot probe CoW support in {path}: {error}") from error
 
-    report = DoctorReport(path=path, filesystem=FilesystemKind.REFLINK, clone_tool=CloneTool.GNU_CP_REFLINK)
+    report = DoctorReport(path=path, filesystem=filesystem, clone_tool=clone_tool)
     return report
 
 
@@ -148,7 +184,11 @@ def parses_apfs_from_diskutil_plist(monkeypatch: pytest.MonkeyPatch) -> None:
             result = super().run(argv, cwd=cwd, env=env, check=check)
             return result
 
+    def fake_clone(source: Path, target: Path) -> None:
+        target.write_bytes(source.read_bytes())
+
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr("cowtree.fs.clonefile", fake_clone)
     assert doctor(Path("."), FakeRunner()).clone_tool == CloneTool.MACOS_CLONEFILE
 
 

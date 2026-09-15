@@ -146,7 +146,7 @@ def create_worktree(repo: Path, target: Path, method: Method, runner: CommandRun
         runner.run(["git", "-C", str(repo), "worktree", "add", "--detach", str(target), "HEAD"])
         return
     if method is Method.COWTREE:
-        request = WorktreeAddRequest(source=repo, args=["--detach", str(target), "HEAD"])
+        request = WorktreeAddRequest(path=target, source=repo, detach=True)
         add_worktree(request, runner)
         return
     raise AssertionError(f"unknown method: {method}")
