@@ -1,0 +1,39 @@
+{
+  "config": {
+    "source": "linux.git",
+    "commit": "adc218676eef25575469234709c2d87185ca223a",
+    "output": "fleet",
+    "leaves": 4,
+    "trials": 1,
+    "seed": 1729,
+    "capacity_gib": 32
+  },
+  "created_at": "2026-09-15T21:40:54.820414+00:00",
+  "platform": "macOS-26.5.2-arm64-arm-64bit",
+  "python": "3.10.20",
+  "cowtree_module": "cowtree-bench-subject/src/cowtree/__init__.py",
+  "benchmark_sources_sha256": {
+    "apfs_space.py": "750eb3a0b3615db150df28995ac6c49617be1e9d95ac2a6cf3b5b1949c8256dd",
+    "churn_workload.py": "6923f6952339dedc2c31a5b974d702b707202ae413563dba06bb771746b13280",
+    "plot.py": "332009ef23665fd18539535d126b7d9f955d593bfafd400a06a65e977be8b433",
+    "run.py": "4009606c3a82403d48c8d58f3b6a9c9e78ec60b90f8ebf1b87ff0e4c9929de42",
+    "schema.py": "040b22b39e413084bc6ba7d27814e1ffa868c53a2a6fa53ce5c15f42d43162b8",
+    "space.py": "2a08fcd0b1e459e674bb84d547e54121c9367e0149c084952bafcc1ae3287cfc",
+    "space_report.py": "bbfd43f8b110762127684b6985ad654ba74d0ac03d083b3746d5169cc947c518"
+  },
+  "runtime_sources_sha256": {
+    "__init__.py": "5473258242d1860ea8e4bd63bcc491f5f2502ead6b45440c9a192fc36dde3fc4",
+    "cli.py": "130010dd0b3f38ac83ae80006c49baaeaffbdc592237f0f52af49321cd609b53",
+    "core.py": "395c3e337dcfeb24cc6ac54ccc413bf7abb4f5a8d133ff6572403b17ec3fb578",
+    "errors.py": "601368e9648edc311c5c56c54d05d02cac604bccfc42d223e90a8dcccbf309b0",
+    "exec.py": "ee0ce0c0beac94e2376fbd7d7adb1a6b7a06b08f502ac0efc06362a340c84794",
+    "fs.py": "e953bf9b672e358020a182090297efaef25dd6199dd945055c8ba5931c1b147b",
+    "git.py": "15ec8681ad1019e2cc299f84cbf54f3b40316a74fc87851a88c06999ed090da2",
+    "native.py": "0c0685b3f80de366e85ae4712c889915e728adbebcc35d28b4ee5c176fda7f0f",
+    "types.py": "ef525780d95a656415732c5a7b1361def2a118096b0f346c73c1256809c415f7"
+  },
+  "runtime_git_head": "f97d7ccc8ff784689ac077af5e782296d0c752d2",
+  "cpu": "Apple M5 Max",
+  "memory_bytes": "51539607552",
+  "git_version": "git version 2.50.1 (Apple Git-155)"
+}
