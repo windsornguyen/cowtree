@@ -17,7 +17,7 @@ From a clean Git checkout::
 The supported commands are::
 
     cowtree add [-b NEW_BRANCH | --detach] [--lock] [--reason TEXT]
-                [--cow] [--no-checkout] [--] path [commit-ish]
+                [--] path [commit-ish]
     cowtree list [--json] [--] [source]
     cowtree remove [--force] [--] path
     cowtree doctor [--] [directory]
@@ -34,10 +34,10 @@ request that behavior explicitly; ``-b`` creates a new branch instead.
 commit. ``--lock`` retains Git's worktree lock. ``--reason`` requires ``--lock``;
 an omitted reason remains ``None`` in the returned metadata.
 
-``--cow`` and ``--no-checkout`` are compatibility markers with no effect.
 Cowtree always populates tracked files through CoW and prepares a clean index.
 There is no pass-through for arbitrary Git arguments. ``-B``, ``--force`` on
-``add``, ``--orphan``, tracking options, and unknown options are rejected.
+``add``, ``--orphan``, ``--cow``, ``--no-checkout``, tracking options, and
+unknown options are rejected.
 
 ``list`` accepts a source checkout or defaults to the current repository.
 Use ``--json`` for machine-readable output, including paths containing line
@@ -52,7 +52,8 @@ doctor result, and ``2`` for invalid command syntax.
 Python API
 ----------
 
-The public operations are exported from ``cowtree``. Their signatures are::
+Import the four public operations from ``cowtree.core`` and their request and
+result types from ``cowtree.types``. Their signatures are::
 
     add_worktree(request: WorktreeAddRequest,
                  runner: CommandRunner | None = None) -> Worktree
@@ -95,7 +96,8 @@ For example:
 
     from pathlib import Path
 
-    from cowtree import Worktree, WorktreeAddRequest, add_worktree, remove_worktree
+    from cowtree.core import add_worktree, remove_worktree
+    from cowtree.types import Worktree, WorktreeAddRequest
 
     source: Path = Path("/path/to/repo")
     request: WorktreeAddRequest = WorktreeAddRequest(
@@ -103,8 +105,8 @@ For example:
         source=source,
         branch="scratch/idea",
     )
-    worktree: Worktree = add_worktree(request)
-    remove_worktree(worktree.path, source=source)
+    worktree: Worktree = add_worktree(request=request)
+    remove_worktree(path=worktree.path, source=source)
 
 Return values
 ~~~~~~~~~~~~~
@@ -122,7 +124,7 @@ and ``reason: str | None``. Branch names are full refs such as
 
 ``inspect_path`` returns a frozen ``DoctorReport`` with ``path: Path``,
 ``filesystem: FilesystemKind``, ``clone_tool: CloneTool | None``, and
-``reason: str | None``. The enums live in ``cowtree.models``. Filesystem values
+``reason: str | None``. The enums live in ``cowtree.types``. Filesystem values
 are ``apfs``, ``reflink``, or ``unsupported``. ``supported`` is true only when
 a native clone probe succeeds and ``clone_tool`` is present. An unsupported
 filesystem returns a report with ``supported=False``; invalid directories and
@@ -157,7 +159,7 @@ Failures and concurrency
 ------------------------
 
 Operations raise ``CowtreeError`` with a ``CowtreeErrorCode`` in ``code`` and
-a diagnostic string in ``message``. Both types are exported from ``cowtree``.
+a diagnostic string in ``message``. Import both types from ``cowtree.errors``.
 
 .. list-table:: Error codes
    :header-rows: 1

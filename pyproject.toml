@@ -69,7 +69,7 @@ addopts = ["--inline-tests", "--strict-config", "--strict-markers", "--tb=short"
 pythonpath = ["src"]
 
 [tool.ruff]
-line-length = 120
+line-length = 100
 target-version = "py310"
 extend-exclude = ["build/", "dist/", ".venv/", "__pycache__/"]
 
@@ -94,6 +94,7 @@ select = [
     "ANN",
     "S",
     "PERF",
+    "PLR0913",
     "ARG",
     "PT",
     "RET",
@@ -107,10 +108,6 @@ ignore = [
     "T201",
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"benchmarks/*.py" = ["S603", "S607"]
-"src/cowtree/exec.py" = ["S603"]
-
 [tool.ruff.lint.isort]
 known-first-party = ["cowtree"]
 force-sort-within-sections = true
@@ -121,7 +118,7 @@ allow-star-arg-any = true
 ignore-fully-untyped = true
 
 [tool.ruff.lint.pylint]
-max-args = 8
+max-args = 5
 max-statements = 25
 
 [tool.ty.environment]

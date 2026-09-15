@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -10,24 +11,67 @@ import statistics
 import tempfile
 import time
 
-from schema import BenchmarkProfile, BenchmarkResults, BenchmarkRun, BenchmarkSummary, Method, PlatformInfo
+from schema import (
+    BenchmarkProfile,
+    BenchmarkResults,
+    BenchmarkRun,
+    BenchmarkSummary,
+    Method,
+    PlatformInfo,
+)
 
 from cowtree.core import add_worktree, inspect_path
 from cowtree.exec import CommandRunner
-from cowtree.models import WorktreeAddRequest
+from cowtree.types import WorktreeAddRequest
 
 
-QUICK_PROFILES = [
-    BenchmarkProfile("basic", 1, 128, 4 * 1024, "one small worktree"),
-    BenchmarkProfile("average", 4, 512, 8 * 1024, "several medium worktrees"),
-    BenchmarkProfile("intensive", 12, 1024, 16 * 1024, "many larger worktrees"),
-]
+QUICK_PROFILES = (
+    BenchmarkProfile(
+        name="basic",
+        worktrees=1,
+        files=128,
+        bytes_per_file=4 * 1024,
+        description="one small worktree",
+    ),
+    BenchmarkProfile(
+        name="average",
+        worktrees=4,
+        files=512,
+        bytes_per_file=8 * 1024,
+        description="several medium worktrees",
+    ),
+    BenchmarkProfile(
+        name="intensive",
+        worktrees=12,
+        files=1024,
+        bytes_per_file=16 * 1024,
+        description="many larger worktrees",
+    ),
+)
 
-FULL_PROFILES = [
-    BenchmarkProfile("basic", 1, 256, 4 * 1024, "one small worktree"),
-    BenchmarkProfile("average", 8, 1024, 8 * 1024, "several medium worktrees"),
-    BenchmarkProfile("intensive", 24, 2048, 16 * 1024, "many larger worktrees"),
-]
+FULL_PROFILES = (
+    BenchmarkProfile(
+        name="basic",
+        worktrees=1,
+        files=256,
+        bytes_per_file=4 * 1024,
+        description="one small worktree",
+    ),
+    BenchmarkProfile(
+        name="average",
+        worktrees=8,
+        files=1024,
+        bytes_per_file=8 * 1024,
+        description="several medium worktrees",
+    ),
+    BenchmarkProfile(
+        name="intensive",
+        worktrees=24,
+        files=2048,
+        bytes_per_file=16 * 1024,
+        description="many larger worktrees",
+    ),
+)
 
 
 def main() -> int:
@@ -38,7 +82,7 @@ def main() -> int:
     args = parser.parse_args()
 
     profiles = QUICK_PROFILES if args.preset == "quick" else FULL_PROFILES
-    results = run_benchmarks(profiles, runs=args.runs)
+    results = run_benchmarks(profiles=profiles, runs=args.runs)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(results.to_json_text())
     print(args.out)
@@ -46,24 +90,26 @@ def main() -> int:
     return code
 
 
-def run_benchmarks(profiles: list[BenchmarkProfile], *, runs: int) -> BenchmarkResults:
+def run_benchmarks(profiles: tuple[BenchmarkProfile, ...], *, runs: int) -> BenchmarkResults:
     runner = CommandRunner()
     started = datetime.now(timezone.utc).isoformat()
     records: list[BenchmarkRun] = []
 
     with tempfile.TemporaryDirectory(prefix="cowtree-bench-") as tmp:
         root = Path(tmp)
-        report = inspect_path(root, runner)
+        report = inspect_path(path=root, runner=runner)
         if not report.supported:
             raise SystemExit(f"CoW unavailable for benchmark root {root}: {report.reason}")
 
         for profile in profiles:
-            repo = root / f"repo-{profile.name}"
-            create_repo(repo, profile, runner)
+            repo = BenchmarkRepository(
+                path=root / f"repo-{profile.name}", profile=profile, io=runner
+            )
+            repo.create()
             for iteration in range(runs):
-                git_record = run_method(repo, root, profile, Method.GIT, iteration, runner)
+                git_record = repo.measure(method=Method.GIT, iteration=iteration)
                 records.append(git_record)
-                cowtree_record = run_method(repo, root, profile, Method.COWTREE, iteration, runner)
+                cowtree_record = repo.measure(method=Method.COWTREE, iteration=iteration)
                 records.append(cowtree_record)
 
     platform_info = PlatformInfo(
@@ -72,31 +118,87 @@ def run_benchmarks(profiles: list[BenchmarkProfile], *, runs: int) -> BenchmarkR
         machine=platform.machine(),
         python=platform.python_version(),
     )
-    summary = summarize(records)
+    summary = summarize(records=records)
     results = BenchmarkResults(
         schema_version=1,
         created_at=started,
         platform=platform_info,
-        profiles=profiles,
+        profiles=list(profiles),
         runs=records,
         summary=summary,
     )
     return results
 
 
-def create_repo(repo: Path, profile: BenchmarkProfile, runner: CommandRunner) -> None:
-    repo.mkdir()
-    runner.run(["git", "init", "-q", str(repo)])
-    runner.run(["git", "-C", str(repo), "config", "user.email", "bench@example.com"])
-    runner.run(["git", "-C", str(repo), "config", "user.name", "Benchmark"])
+@dataclass(frozen=True)
+class BenchmarkRepository:
+    path: Path
+    profile: BenchmarkProfile
+    io: CommandRunner
 
-    for index in range(profile.files):
-        directory = repo / "files" / f"{index // 256:04d}"
-        directory.mkdir(parents=True, exist_ok=True)
-        write_deterministic_file(directory / f"{index:06d}.dat", profile.bytes_per_file, f"{profile.name}:{index}")
+    def create(self) -> None:
+        self.path.mkdir()
+        self.io.run(["git", "init", "-q", str(self.path)])
+        self.io.run(["git", "-C", str(self.path), "config", "user.email", "bench@example.com"])
+        self.io.run(["git", "-C", str(self.path), "config", "user.name", "Benchmark"])
 
-    runner.run(["git", "-C", str(repo), "add", "."])
-    runner.run(["git", "-C", str(repo), "commit", "-qm", "benchmark fixture"])
+        for index in range(self.profile.files):
+            directory = self.path / "files" / f"{index // 256:04d}"
+            directory.mkdir(parents=True, exist_ok=True)
+            write_deterministic_file(
+                path=directory / f"{index:06d}.dat",
+                size=self.profile.bytes_per_file,
+                seed=f"{self.profile.name}:{index}",
+            )
+
+        self.io.run(["git", "-C", str(self.path), "add", "."])
+        self.io.run(["git", "-C", str(self.path), "commit", "-qm", "benchmark fixture"])
+
+    def measure(self, method: Method, iteration: int) -> BenchmarkRun:
+        target_root = self.path.parent / f"{self.profile.name}-{method.value}-{iteration}"
+        start = time.perf_counter()
+        try:
+            for index in range(self.profile.worktrees):
+                target = target_root / f"wt-{index:03d}"
+                self.create_worktree(target=target, method=method)
+        finally:
+            elapsed = time.perf_counter() - start
+            self.remove_targets(target_root=target_root)
+
+        payload_copied_bytes = self.profile.fleet_payload_bytes if method is Method.GIT else 0
+        record = BenchmarkRun(
+            profile=self.profile.name,
+            method=method,
+            iteration=iteration,
+            elapsed_seconds=elapsed,
+            worktrees=self.profile.worktrees,
+            files=self.profile.files,
+            tracked_bytes=self.profile.tracked_bytes,
+            fleet_payload_bytes=self.profile.fleet_payload_bytes,
+            payload_copied_bytes=payload_copied_bytes,
+        )
+        return record
+
+    def create_worktree(self, target: Path, method: Method) -> None:
+        if method is Method.GIT:
+            self.io.run(
+                ["git", "-C", str(self.path), "worktree", "add", "--detach", str(target), "HEAD"]
+            )
+            return
+        if method is Method.COWTREE:
+            request = WorktreeAddRequest(path=target, source=self.path, detach=True)
+            add_worktree(request=request, runner=self.io)
+            return
+        raise AssertionError(f"unknown method: {method}")
+
+    def remove_targets(self, target_root: Path) -> None:
+        if target_root.exists():
+            for target in sorted(target_root.iterdir()):
+                self.io.run(
+                    ["git", "-C", str(self.path), "worktree", "remove", "--force", str(target)],
+                    check=False,
+                )
+            shutil.rmtree(target_root, ignore_errors=True)
 
 
 def write_deterministic_file(path: Path, size: int, seed: str) -> None:
@@ -108,65 +210,18 @@ def write_deterministic_file(path: Path, size: int, seed: str) -> None:
         file.write(digest[:remainder])
 
 
-def run_method(
-    repo: Path,
-    root: Path,
-    profile: BenchmarkProfile,
-    method: Method,
-    iteration: int,
-    runner: CommandRunner,
-) -> BenchmarkRun:
-    target_root = root / f"{profile.name}-{method.value}-{iteration}"
-    start = time.perf_counter()
-    try:
-        for index in range(profile.worktrees):
-            target = target_root / f"wt-{index:03d}"
-            create_worktree(repo, target, method, runner)
-    finally:
-        elapsed = time.perf_counter() - start
-        remove_targets(repo, target_root, runner)
-
-    payload_copied_bytes = profile.fleet_payload_bytes if method is Method.GIT else 0
-    record = BenchmarkRun(
-        profile=profile.name,
-        method=method,
-        iteration=iteration,
-        elapsed_seconds=elapsed,
-        worktrees=profile.worktrees,
-        files=profile.files,
-        tracked_bytes=profile.tracked_bytes,
-        fleet_payload_bytes=profile.fleet_payload_bytes,
-        payload_copied_bytes=payload_copied_bytes,
-    )
-    return record
-
-
-def create_worktree(repo: Path, target: Path, method: Method, runner: CommandRunner) -> None:
-    if method is Method.GIT:
-        runner.run(["git", "-C", str(repo), "worktree", "add", "--detach", str(target), "HEAD"])
-        return
-    if method is Method.COWTREE:
-        request = WorktreeAddRequest(path=target, source=repo, detach=True)
-        add_worktree(request, runner)
-        return
-    raise AssertionError(f"unknown method: {method}")
-
-
-def remove_targets(repo: Path, target_root: Path, runner: CommandRunner) -> None:
-    if target_root.exists():
-        for target in sorted(target_root.iterdir()):
-            runner.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(target)], check=False)
-        shutil.rmtree(target_root, ignore_errors=True)
-
-
 def summarize(records: list[BenchmarkRun]) -> list[BenchmarkSummary]:
     summaries: list[BenchmarkSummary] = []
     profile_names = sorted({record.profile for record in records})
     for profile in profile_names:
         for method in Method:
-            rows = [record for record in records if record.profile == profile and record.method is method]
+            rows = [
+                record
+                for record in records
+                if record.profile == profile and record.method is method
+            ]
             if rows:
-                summary = summarize_rows(rows)
+                summary = summarize_rows(rows=rows)
                 summaries.append(summary)
     return summaries
 
