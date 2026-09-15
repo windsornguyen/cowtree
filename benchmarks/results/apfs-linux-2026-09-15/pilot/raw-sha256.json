@@ -1,0 +1,14 @@
+{
+  "raw_archive_files": {
+    "metadata.json": "845a4df5966228320b3519bef0cac8000e2524666e9d592a1078856138b1ae5f",
+    "trial-0-comparison.json": "ff975a2b5c0496e193e30c3de71c1765ada03390157d908fae60e1f9b82c8d1c",
+    "trial-0-cowtree-manifest.json": "9ffa3a02f4fa51ff77c900ffd0f7da1f8856ce4e3bc1cc0a0d42578c7b956a3f",
+    "trial-0-cowtree.json": "7761a336563300b3d6ba1922cb014de25800473ca9e1e313063335c4375838ce",
+    "trial-0-cowtree.jsonl": "9944036d7bdc1d7adea3107c3d1f3b47639b83353601e371f37e31eeabf29aec",
+    "trial-0-git-manifest.json": "9ffa3a02f4fa51ff77c900ffd0f7da1f8856ce4e3bc1cc0a0d42578c7b956a3f",
+    "trial-0-git.json": "3327ad0d6b243732101fe228e6dd6bce88cfe4b319ed29ccaa5c87ab5d6ad43c",
+    "trial-0-git.jsonl": "988fab1ff1d59f728d29f92c2626f28a6d569f311ac7be39022d46123f152686"
+  },
+  "exported_metadata_sha256": "915dfef551efb81cbb98e1d0049a275f4fc9ae966618bbd1b777eae96ab255bc",
+  "note": "Raw archive preserves original metadata; exported metadata replaces absolute local paths."
+}
