@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: mitchellh/vouch/action/setup-vouch@main
       - uses: mitchellh/vouch/action/manage-by-issue@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           issue-id: ${{ github.event.issue.number }}
           comment-id: ${{ github.event.comment.id }}
