@@ -64,3 +64,15 @@ jobs:
         run: uv python install 3.10
       - name: Build package
         run: uv build
+
+  filesystems:
+    name: Native filesystem matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8
+      - name: Install filesystem tools
+        run: sudo apt-get update && sudo apt-get install -y btrfs-progs xfsprogs
+      - name: Verify reflink support and refusal
+        run: sudo env "PATH=$PATH" bash scripts/fs_matrix.sh
