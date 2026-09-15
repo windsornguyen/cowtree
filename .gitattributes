@@ -1,0 +1,4 @@
+.github/workflows/*.yml linguist-generated=true
+.github/actions/ci/** linguist-generated=true
+# Preserve vendored string literals in Hollywood's generated bundles.
+.github/actions/ci/*/dist/index.js -whitespace

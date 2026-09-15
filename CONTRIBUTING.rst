@@ -119,3 +119,16 @@ Python dependency management continues to use ``uv``. Rust changes must pass::
 ``fault-injection`` enables process-crash and bounded-pause hooks for tests only.
 Default builds do not respond to those environment variables. Document the actual
 fault boundary tested; process termination does not prove power-loss durability.
+
+Generated GitHub Actions
+------------------------
+
+Workflow sources live in ``ci/`` and use Hollywood Actions 0.0.5. Do not edit
+``.github/workflows/`` or ``.github/actions/ci/`` by hand. With Node 24.11 or newer::
+
+    npm ci --ignore-scripts
+    npm run ci generate
+    npm run ci check
+
+Commit the TypeScript sources and generated outputs together. See
+`ci/README.md <ci/README.md>`_ for the generation check and Vouch trust boundary.
