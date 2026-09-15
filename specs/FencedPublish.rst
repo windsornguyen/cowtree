@@ -75,6 +75,15 @@ one step. It checks preservation only in the listed finite domains. Ordinary
 reachable-state checks also cover Init. Required publication safety is included
 as conjuncts of Inv. None of these checks proves an unbounded theorem.
 
+Checker choice
+--------------
+
+TLC is the protocol verification backend. Keep the existing TLA+ models.
+A future typed frontend must use TLC explicitly and preserve the domains,
+transitions, selected properties and expected counterexamples before adoption.
+Changing the authoring language does not establish implementation conformance.
+Replay model traces through the real API to test its transaction boundaries.
+
 Reproduction
 ------------
 
