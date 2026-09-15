@@ -143,9 +143,12 @@ class WorktreeCreation:
             self.checkout_index()
             if not self.request.lock:
                 self.repository.run(args=["worktree", "unlock", str(self.target)])
-            worktree = next(
-                tree for tree in self.repository.worktrees() if tree.path == self.target
-            )
+            worktree = self.repository.find_worktree(path=self.target)
+            if worktree is None:
+                raise CowtreeError(
+                    CowtreeErrorCode.WORKTREE_NOT_FOUND,
+                    f"created worktree is not registered: {self.target}",
+                )
         except BaseException as original:
             # Roll back cancellation, then re-raise it.
             try:
@@ -248,7 +251,7 @@ class WorktreeCreation:
     def rollback(self) -> None:
         """Remove owned registration, branch, and directories in that order."""
         if self.target in self.created:
-            registered = any(tree.path == self.target for tree in self.repository.worktrees())
+            registered = self.repository.find_worktree(path=self.target) is not None
             if registered:
                 self.repository.run(
                     args=["worktree", "remove", "--force", "--force", str(self.target)]
