@@ -217,3 +217,18 @@ def test_invariant_paired_benchmark_rejects_different_states(tmp_path: Path) -> 
     (tmp_path / "trial-0-cowtree.json").write_text(json.dumps(records))
     with pytest.raises(RuntimeError, match="paired states differ"):
         compare(cfg, 0)
+
+
+def test_invariant_report_rejects_partial_runs(tmp_path: Path) -> None:
+    from benchmarks.space_report import read_measurements
+
+    (tmp_path / "metadata.json").write_text(json.dumps({"config": {"trials": 1}}))
+    stages = ("empty", "source", "pristine", "atomic_1pct", "round_2_append")
+    records = [
+        {"stage": stage, "space": {"used_bytes": index * 100}, "operation_seconds": 1.0}
+        for index, stage in enumerate(stages)
+    ]
+    for method in Method:
+        (tmp_path / f"trial-0-{method.value}.json").write_text(json.dumps(records))
+    with pytest.raises(ValueError, match="incomplete"):
+        read_measurements(root=tmp_path)

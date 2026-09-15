@@ -30,8 +30,13 @@ def read_measurements(root: Path) -> list[Measurement]:
     measurements: list[Measurement] = []
     metadata = json.loads((root / "metadata.json").read_text())
     for trial in range(metadata["config"]["trials"]):
+        receipt = root / f"trial-{trial}-comparison.json"
+        if not receipt.is_file() or json.loads(receipt.read_text()).get("matched") is not True:
+            raise ValueError(f"incomplete paired run: trial {trial}")
         for method in Method:
             records = json.loads((root / f"trial-{trial}-{method.value}.json").read_text())
+            if not records or records[-1]["stage"] != "detached":
+                raise ValueError(f"incomplete arm: trial {trial}, {method.value}")
             spaces = {row["stage"]: row for row in records if "space" in row}
             empty = spaces["empty"]["space"]["used_bytes"]
             source = spaces["source"]["space"]["used_bytes"]
