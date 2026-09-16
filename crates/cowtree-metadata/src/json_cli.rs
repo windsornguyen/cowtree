@@ -3,8 +3,9 @@
 //! Line-delimited JSON interface to the local metadata authority.
 
 use cowtree_metadata::{
-    Candidate, Entry, Grant, LeafId, LeafView, Limits, Maintenance, Proposal, ProposalInput,
-    Receipt, RequestId, ResourcePath, Snapshot, Store, Version, objects::ObjectId,
+    BatchCandidate, BatchReceipt, Candidate, Entry, ErrorCode, ErrorDetails, Grant, LeafId,
+    LeafView, Limits, Maintenance, Proposal, ProposalInput, Receipt, RequestId, ResolutionInput,
+    ResourcePath, RetryAction, Snapshot, Store, Version, WireError, objects::ObjectId,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -20,7 +21,14 @@ enum Command {
         #[serde(default)]
         limits: Limits,
     },
+    InitWorkspace {
+        source: std::path::PathBuf,
+        commit: String,
+        #[serde(default)]
+        limits: Limits,
+    },
     CreateLeaf,
+    Leaves,
     Tip,
     Snapshot {
         version: Version,
@@ -85,6 +93,38 @@ enum Command {
     ReleaseRetention {
         version: Version,
     },
+    PrepareBatch {
+        requests: Vec<RequestId>,
+        expected_tip: Version,
+    },
+    CommitBatch {
+        candidate: BatchCandidate,
+    },
+    Resolve {
+        input: ResolutionInput,
+    },
+    ImportTree {
+        source: std::path::PathBuf,
+        paths: Vec<ResourcePath>,
+    },
+    BindTree {
+        leaf: LeafId,
+        path: std::path::PathBuf,
+        version: Version,
+    },
+    Binding {
+        leaf: LeafId,
+    },
+    CaptureFiles {
+        grants: Vec<Grant>,
+    },
+    Install {
+        leaf: LeafId,
+        version: Version,
+    },
+    Recover {
+        leaf: LeafId,
+    },
     Maintain,
 }
 #[derive(Serialize)]
@@ -92,6 +132,7 @@ enum Command {
 enum Output {
     Done,
     Leaf(LeafId),
+    Leaves(Vec<LeafId>),
     Tip { version: Version, root: ObjectId },
     Snapshot(Snapshot),
     Bytes(Option<Vec<u8>>),
@@ -105,22 +146,41 @@ enum Output {
     Receipt(Receipt),
     Result(Option<Receipt>),
     Maintenance(Maintenance),
+    BatchCandidate(BatchCandidate),
+    BatchReceipt(BatchReceipt),
+    Installation(cowtree_metadata::Installation),
 }
 #[derive(Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 enum Response {
-    Ok { output: Output },
-    Error { message: String },
+    Ok {
+        output: Output,
+    },
+    Error {
+        #[serde(flatten)]
+        error: WireError,
+    },
 }
 fn execute(root: &Path, command: Command) -> cowtree_metadata::Result<Output> {
     if let Command::Init { limits } = command {
         Store::create(root, limits)?;
         return Ok(Output::Done);
     }
+    if let Command::InitWorkspace { source, commit, limits } = command {
+        Store::create_workspace(root, &source, &commit, limits)?;
+        return Ok(Output::Done);
+    }
     let mut store = Store::open(root)?;
+    execute_store(&mut store, command)
+}
+
+fn execute_store(store: &mut Store, command: Command) -> cowtree_metadata::Result<Output> {
     let output = match command {
-        Command::Init { .. } => return Err(cowtree_metadata::Error::Schema),
+        Command::Init { .. } | Command::InitWorkspace { .. } => {
+            return Err(cowtree_metadata::Error::Schema);
+        }
         Command::CreateLeaf => Output::Leaf(store.create_leaf()?),
+        Command::Leaves => Output::Leaves(store.leaves()?),
         Command::Tip => {
             let (version, root) = store.tip()?;
             Output::Tip { version, root }
@@ -149,29 +209,93 @@ fn execute(root: &Path, command: Command) -> cowtree_metadata::Result<Output> {
             store.release_retention(version).map(|()| Output::Done)?
         }
         Command::Maintain => Output::Maintenance(store.maintain()?),
+        Command::PrepareBatch { requests, expected_tip } => {
+            Output::BatchCandidate(store.prepare_batch(requests, expected_tip)?)
+        }
+        Command::CommitBatch { candidate } => Output::BatchReceipt(store.commit_batch(candidate)?),
+        Command::Resolve { input } => Output::Proposal(store.resolve(input)?),
+        Command::ImportTree { source, paths } => {
+            let (version, root) = store.import_tree(&source, &paths)?;
+            Output::Tip { version, root }
+        }
+        Command::BindTree { leaf, path, version } => {
+            Output::Installation(store.bind_tree(leaf, &path, version)?)
+        }
+        Command::Binding { leaf } => Output::Installation(store.binding(leaf)?),
+        Command::CaptureFiles { grants } => Output::Views(store.capture_files(&grants)?),
+        Command::Install { leaf, version } => Output::Installation(store.install(leaf, version)?),
+        Command::Recover { leaf } => Output::Installation(store.recover(leaf)?),
     };
     Ok(output)
 }
+
+const MAX_REQUEST_BYTES: usize = 128 * 1024 * 1024;
+
+fn invalid_request(error: serde_json::Error) -> Response {
+    Response::Error {
+        error: WireError {
+            message: error.to_string(),
+            code: ErrorCode::InvalidRequest,
+            retry_action: RetryAction::None,
+            details: ErrorDetails::InvalidRequest { line: error.line(), column: error.column() },
+        },
+    }
+}
+
+fn oversized_request() -> Response {
+    Response::Error {
+        error: WireError {
+            message: "JSON request exceeds 128 MiB".into(),
+            code: ErrorCode::InvalidRequest,
+            retry_action: RetryAction::None,
+            details: ErrorDetails::RequestTooLarge { max_bytes: MAX_REQUEST_BYTES },
+        },
+    }
+}
+
+// Drain without retaining bytes, preserving the next line as a separate request.
+fn drain_line(input: &mut impl BufRead) -> io::Result<()> {
+    loop {
+        let bytes = input.fill_buf()?;
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        let newline = bytes.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(bytes.len(), |index| index + 1);
+        input.consume(consumed);
+        if newline.is_some() {
+            return Ok(());
+        }
+    }
+}
+
+fn respond(root: &Path, line: &[u8]) -> Response {
+    match serde_json::from_slice::<Command>(line) {
+        Ok(command) => match execute(root, command) {
+            Ok(result) => Response::Ok { output: result },
+            Err(error) => Response::Error { error: error.wire() },
+        },
+        Err(error) => invalid_request(error),
+    }
+}
+
 pub fn run(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
     loop {
         let mut line = Vec::new();
-        // A bounded line prevents an incomplete JSON request from consuming all memory.
-        let count =
-            io::Read::take(&mut input, 128 * 1024 * 1024 + 1).read_until(b'\n', &mut line)?;
+        let count = io::Read::take(&mut input, MAX_REQUEST_BYTES as u64 + 1)
+            .read_until(b'\n', &mut line)?;
         if count == 0 {
             return Ok(());
         }
-        if line.len() > 128 * 1024 * 1024 {
-            return Err("JSON request exceeds 128 MiB".into());
-        }
-        let response = match serde_json::from_slice::<Command>(&line) {
-            Ok(command) => match execute(root, command) {
-                Ok(result) => Response::Ok { output: result },
-                Err(error) => Response::Error { message: error.to_string() },
-            },
-            Err(error) => Response::Error { message: error.to_string() },
+        let response = if line.len() > MAX_REQUEST_BYTES {
+            if line.last() != Some(&b'\n') {
+                drain_line(&mut input)?;
+            }
+            oversized_request()
+        } else {
+            respond(root, &line)
         };
         serde_json::to_writer(&mut output, &response)?;
         writeln!(output)?;

@@ -272,5 +272,8 @@ Run the complete publication example with::
 
     cargo run --locked -p cowtree-metadata --example publish
 
-The Python Git-worktree API does not use this backend yet. Its activation
-operation installs a logical view; filesystem installation is a separate step.
+The ``cowtree.workspace.Workspace`` Python API connects the backend to real CoW
+Git worktrees, including atomic batch publication, explicit conflict resolution,
+and journaled installation/recovery. See `Managed workspaces <docs/workspaces.md>`_
+for the API and executable examples. The existing independent worktree commands
+remain available.

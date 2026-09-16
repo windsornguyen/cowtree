@@ -14,6 +14,10 @@ for command in uv git truncate losetup mount umount mkfs.btrfs mkfs.xfs mkfs.ext
 done
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ -z ${COWTREE_METADATA_BINARY:-} || ! -x $COWTREE_METADATA_BINARY ]]; then
+    printf 'FAIL  COWTREE_METADATA_BINARY must name a built metadata executable\n' >&2
+    exit 1
+fi
 root=${COWTREE_MATRIX_ROOT:-/var/tmp}
 if [[ ! -d $root ]]; then
     printf 'FAIL  matrix root must exist: %s\n' "$root" >&2
@@ -79,11 +83,11 @@ for filesystem in btrfs xfs-reflink xfs-no-reflink ext4; do
     mount -- "$loop_device" "$mountpoint"
     mounted=1
     if (( expected )); then
-        COWTREE_EXPECT_SUPPORTED=1 uv run --locked --no-default-groups --project "$repo" --group test \
+        TMPDIR="$mountpoint" COWTREE_EXPECT_SUPPORTED=1 uv run --locked --no-default-groups --project "$repo" --group test \
             pytest "$repo/tests" "$repo/src" --basetemp "$mountpoint/tests" -q
     else
         COWTREE_EXPECT_SUPPORTED=0 uv run --locked --no-default-groups --project "$repo" --group test \
-            pytest "$repo/tests/test_engine.py" --basetemp "$mountpoint/tests" -q \
+            pytest "$repo/tests/test_engine.py" "$repo/tests/test_workspace_filesystems.py" --basetemp "$mountpoint/tests" -q \
             -k 'filesystem_support_matches_expectation or unsupported_filesystem_leaves_no_state'
     fi
     cleanup_mount

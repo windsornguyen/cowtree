@@ -17,7 +17,7 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 0x43575452;
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 3;
 
 /// One connection to the same-host SQLite authority and its immutable object directory.
 pub struct Store {
@@ -69,10 +69,13 @@ impl Store {
         let application: i64 =
             connection.pragma_query_value(None, "application_id", |r| r.get(0))?;
         let schema: i64 = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if application != APPLICATION_ID || schema != SCHEMA_VERSION {
+        if application != APPLICATION_ID || !(1..=SCHEMA_VERSION).contains(&schema) {
             return Err(Error::Schema);
         }
         configure(&connection)?;
+        if schema < SCHEMA_VERSION {
+            migrate(&connection)?;
+        }
         let raw: String = connection.query_row(
             "SELECT limits_json FROM settings WHERE singleton=1",
             [],
@@ -122,10 +125,33 @@ impl Store {
         tx.commit()?;
         Ok(bytes)
     }
+    /// List active leaf identities, including unbound leaves awaiting recovery.
+    pub fn leaves(&self) -> Result<Vec<LeafId>> {
+        let mut statement = self.connection.prepare("SELECT id FROM leaves ORDER BY id")?;
+        let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.map(|row| LeafId::from_sql(row?)).collect()
+    }
     /// Allocate a new leaf identity without ever reusing a dropped identity.
     pub fn create_leaf(&mut self) -> Result<LeafId> {
         self.capacity()?;
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let importing: bool =
+            tx.query_row("SELECT EXISTS(SELECT 1 FROM imports WHERE ready=0)", [], |row| {
+                row.get(0)
+            })?;
+        if importing {
+            return Err(Error::ImportConflict);
+        }
+        let configuration = self.root.join("workspace.json");
+        if configuration.try_exists().map_err(|source| Error::Io { path: configuration, source })? {
+            let ready: bool =
+                tx.query_row("SELECT EXISTS(SELECT 1 FROM imports WHERE ready=1)", [], |row| {
+                    row.get(0)
+                })?;
+            if !ready {
+                return Err(Error::ImportConflict);
+            }
+        }
         let count: i64 = tx.query_row("SELECT count(*) FROM leaves", [], |r| r.get(0))?;
         if count >= i64::from(self.limits.max_leaves) {
             return Err(Error::Limit(crate::LimitKind::ActiveLeaves));
@@ -156,30 +182,50 @@ impl Store {
         }
         self.capacity()?;
         let object = ObjectId::from_bytes(bytes);
-        let generation = {
-            let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            active(&tx, leaf)?;
-            let count: i64 = tx.query_row("SELECT count(*) FROM uploads", [], |r| r.get(0))?;
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM uploads WHERE leaf=?1 AND object=?2)",
-                params![leaf.sql(), object.as_str()],
-                |row| row.get(0),
-            )?;
-            if !exists && count >= i64::from(self.limits.max_pending) {
-                return Err(Error::Limit(crate::LimitKind::PendingUploads));
-            }
-            let generation = next_token(&tx)?;
-            tx.execute(
-                "INSERT INTO uploads VALUES(?1,?2,0,?3)
-                 ON CONFLICT(leaf,object) DO UPDATE SET ready=0,generation=excluded.generation",
-                params![leaf.sql(), object.as_str(), generation],
-            )?;
-            tx.commit()?;
-            generation
-        };
+        let generation = self.pin_upload(leaf, &object)?;
         crate::fault::checkpoint("after-upload-pin");
         self.objects.put(bytes)?;
         crate::fault::checkpoint("after-object-persist");
+        self.finish_upload(leaf, object, generation)
+    }
+    pub(crate) fn stage_file(
+        &mut self,
+        leaf: LeafId,
+        path: &Path,
+        object: ObjectId,
+    ) -> Result<ObjectId> {
+        self.capacity()?;
+        let generation = self.pin_upload(leaf, &object)?;
+        self.objects.put_file(path, &object)?;
+        self.finish_upload(leaf, object, generation)
+    }
+    fn pin_upload(&mut self, leaf: LeafId, object: &ObjectId) -> Result<i64> {
+        let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        active(&tx, leaf)?;
+        let count: i64 = tx.query_row("SELECT count(*) FROM uploads", [], |r| r.get(0))?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM uploads WHERE leaf=?1 AND object=?2)",
+            params![leaf.sql(), object.as_str()],
+            |row| row.get(0),
+        )?;
+        if !exists && count >= i64::from(self.limits.max_pending) {
+            return Err(Error::Limit(crate::LimitKind::PendingUploads));
+        }
+        let generation = next_token(&tx)?;
+        tx.execute(
+            "INSERT INTO uploads VALUES(?1,?2,0,?3)
+                 ON CONFLICT(leaf,object) DO UPDATE SET ready=0,generation=excluded.generation",
+            params![leaf.sql(), object.as_str(), generation],
+        )?;
+        tx.commit()?;
+        Ok(generation)
+    }
+    fn finish_upload(
+        &mut self,
+        leaf: LeafId,
+        object: ObjectId,
+        generation: i64,
+    ) -> Result<ObjectId> {
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         active(&tx, leaf)?;
         if tx.execute(
@@ -230,6 +276,14 @@ fn configure(connection: &Connection) -> Result<()> {
     Ok(())
 }
 pub(crate) fn active(connection: &Connection, leaf: LeafId) -> Result<i64> {
+    let pending: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM bindings WHERE leaf=?1 AND pending_version IS NOT NULL)",
+        [leaf.sql()],
+        |row| row.get(0),
+    )?;
+    if pending {
+        return Err(Error::NeedsRecovery(leaf.sql()));
+    }
     let next = connection
         .query_row("SELECT next_sequence FROM leaves WHERE id=?1", [leaf.sql()], |r| r.get(0))
         .optional()?
@@ -261,4 +315,27 @@ pub(crate) fn next_token(tx: &Transaction<'_>) -> Result<i64> {
     let next = token.checked_add(1).ok_or(Error::CounterExhausted)?;
     tx.execute("UPDATE settings SET next_token=?1 WHERE singleton=1", [next])?;
     Ok(token)
+}
+
+fn migrate(connection: &Connection) -> Result<()> {
+    let tx = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    if !(1..SCHEMA_VERSION).contains(&version) {
+        return Err(Error::Schema);
+    }
+    if version == 1 {
+        tx.execute_batch("ALTER TABLE proposals ADD COLUMN batch_id TEXT;
+              CREATE TABLE imports(singleton INTEGER PRIMARY KEY CHECK(singleton=1), source TEXT NOT NULL,
+              paths TEXT NOT NULL, root TEXT NOT NULL, ready INTEGER NOT NULL CHECK(ready IN (0,1)));
+              CREATE TABLE bindings(leaf INTEGER PRIMARY KEY REFERENCES leaves(id), path TEXT NOT NULL UNIQUE,
+              device INTEGER NOT NULL, inode INTEGER NOT NULL, version INTEGER NOT NULL REFERENCES epochs(version),
+              pending_version INTEGER REFERENCES epochs(version), generation INTEGER NOT NULL DEFAULT 0, plan TEXT);")?;
+    }
+    tx.execute_batch("ALTER TABLE views ADD COLUMN captured INTEGER NOT NULL DEFAULT 0 CHECK(captured IN (0,1));")?;
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    tx.commit()?;
+    Ok(())
 }

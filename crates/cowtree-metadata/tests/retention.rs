@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Windsor Nguyen
+
 //! Retention protects live state while bounded history and orphan bytes are reclaimed.
 
 #![allow(clippy::unwrap_used)]

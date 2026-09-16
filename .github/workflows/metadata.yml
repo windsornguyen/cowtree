@@ -32,8 +32,28 @@ jobs:
       - name: Lint
         run: cargo +1.97.1 clippy --locked --workspace --all-targets --all-features -- -D warnings
         shell: bash
-      - name: Test crashes and concurrent publication
-        run: cargo +1.97.1 test --locked --workspace --all-targets --all-features
+      - name: Update Linux package index
+        run: sudo apt-get update
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+      - name: Install Linux reflink test filesystem
+        run: sudo apt-get install -y btrfs-progs
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+      - name: Test crashes and concurrent publication on native reflinks
+        run: bash scripts/metadata_test.sh
+        shell: bash
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+        if: ${{ runner.os == 'macOS' }}
+      - name: Test managed Python workspaces on APFS
+        run: uv run --locked --no-default-groups --group test pytest tests/test_workspace.py -q
+        if: ${{ runner.os == 'macOS' }}
+        env:
+          COWTREE_METADATA_BINARY: ${{ format('{0}/target/debug/cowtree-metadata', github.workspace) }}
+          COWTREE_EXPECT_SUPPORTED: "1"
         shell: bash
       - name: Run production example with test hooks disabled
         run: cargo +1.97.1 run --locked -p cowtree-metadata --example publish

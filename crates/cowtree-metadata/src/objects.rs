@@ -180,6 +180,61 @@ impl ObjectStore {
         Ok(id)
     }
 
+    /// Publish an existing regular file through strict native CoW, without a copy fallback.
+    pub fn put_file(&self, source: &Path, expected: &ObjectId) -> Result<ObjectId, ObjectError> {
+        let _publication = self.lock(FlockOperation::LockShared)?;
+        let target = self.path(expected);
+        if target.try_exists().map_err(|source| ObjectError::Io { path: target.clone(), source })? {
+            let (file, _) = self.verified(expected)?;
+            sync_file(&file).map_err(|source| ObjectError::Io { path: target, source })?;
+            sync_directory(&self.root)
+                .map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+            return Ok(expected.clone());
+        }
+        let temporary = tempfile::Builder::new()
+            .prefix(&format!(".pending-{expected}-"))
+            .tempfile_in(&self.root)
+            .map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+        let temporary = temporary.into_temp_path();
+        fs::remove_file(&temporary)
+            .map_err(|source| ObjectError::Io { path: temporary.to_path_buf(), source })?;
+        reflink_copy::reflink(source, &temporary)
+            .map_err(|source| ObjectError::Io { path: temporary.to_path_buf(), source })?;
+        let bytes = fs::read(&temporary)
+            .map_err(|source| ObjectError::Io { path: temporary.to_path_buf(), source })?;
+        let actual = ObjectId::from_bytes(&bytes);
+        if actual != *expected {
+            return Err(ObjectError::Corrupt {
+                path: temporary.to_path_buf(),
+                expected: expected.clone(),
+                actual,
+            });
+        }
+        let file = File::open(&temporary)
+            .map_err(|source| ObjectError::Io { path: temporary.to_path_buf(), source })?;
+        sync_file(&file)
+            .map_err(|source| ObjectError::Io { path: temporary.to_path_buf(), source })?;
+        match fs::hard_link(&temporary, &target) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                self.verified(expected)?;
+            }
+            Err(source) => return Err(ObjectError::Io { path: target, source }),
+        }
+        temporary.close().map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+        sync_directory(&self.root)
+            .map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+        Ok(expected.clone())
+    }
+
+    /// Clone verified immutable bytes into a new caller-owned file on the same CoW filesystem.
+    pub fn clone_to(&self, id: &ObjectId, target: &Path) -> Result<(), ObjectError> {
+        self.verified(id)?;
+        reflink_copy::reflink(self.path(id), target)
+            .map_err(|source| ObjectError::Io { path: target.into(), source })?;
+        Ok(())
+    }
+
     /// Read complete bytes while the caller holds a retention pin; verify the digest.
     pub fn read(&self, id: &ObjectId) -> Result<Vec<u8>, ObjectError> {
         self.verified(id).map(|(_, bytes)| bytes)

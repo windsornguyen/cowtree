@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, mkdtemp, writeFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { test } from "node:test";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import {
   generateWorkflowFile,
   renderWorkflowFile,
@@ -101,7 +104,9 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
   assert.deepEqual(calls, [
     { file: "sudo", args: ["apt-get", "update"] },
     { file: "sudo", args: ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"] },
-    { file: "sudo", args: ["env", "PATH=/installed uv:/usr/bin", "bash", "scripts/fs_matrix.sh"] },
+    { file: "rustup", args: ["toolchain", "install", "1.97.1", "--profile", "minimal"] },
+    { file: "cargo", args: ["+1.97.1", "build", "--locked", "-p", "cowtree-metadata", "--features", "fault-injection"] },
+    { file: "sudo", args: ["env", "PATH=/installed uv:/usr/bin", `COWTREE_METADATA_BINARY=${resolve("target/debug/cowtree-metadata")}`, "bash", "scripts/fs_matrix.sh"] },
   ]);
   await assert.rejects(checkFilesystems(exec, undefined), /PATH is required/);
   let attempts = 0;
@@ -111,4 +116,44 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
   };
   await assert.rejects(checkFilesystems(failed, "/usr/bin"), /apt failed/);
   assert.equal(attempts, 1);
+});
+
+
+test("metadata Linux tests use an owned mount and clean it after success or failure", async () => {
+  const scratch = await mkdtemp(join(tmpdir(), "cowtree-ci-shell-"));
+  try {
+    const command = `#!/bin/bash
+name="$(basename "$0")"
+printf '%s %s\\n' "$name" "$*" >> "$COWTREE_TEST_LOG"
+case "$name" in
+  uname) printf 'Linux\\n' ;;
+  sudo)
+    if [[ $1 == losetup && $2 == --find ]]; then printf '/dev/cowtree-owned-test\\n'; fi
+    ;;
+  cargo)
+    printf 'test_tmpdir %s\\n' "$TMPDIR" >> "$COWTREE_TEST_LOG"
+    exit "$COWTREE_TEST_STATUS"
+    ;;
+esac
+`;
+    for (const name of ["uname", "sudo", "cargo", "truncate", "losetup", "mount", "umount", "mkfs.btrfs"])
+      await writeFile(join(scratch, name), command, { mode: 0o755 });
+    for (const status of [0, 19]) {
+      const log = join(scratch, `calls-${status}`);
+      const call = promisify(execFile)("bash", ["scripts/metadata_test.sh"], {
+        env: { ...process.env, PATH: `${scratch}:${process.env.PATH}`, COWTREE_TEST_LOG: log, COWTREE_TEST_STATUS: String(status) },
+      });
+      if (status === 0) await call;
+      else await assert.rejects(call, { code: status });
+      const calls = await readFile(log, "utf8");
+      const mount = /test_tmpdir (.+)/.exec(calls)?.[1];
+      assert.ok(mount && mount.startsWith("/var/tmp/cowtree-metadata."));
+      assert.match(calls, /cargo \+1\.97\.1 test --locked --workspace --all-targets --all-features -- --test-threads=2/);
+      assert.ok(calls.includes(`sudo umount -- ${mount}`));
+      assert.ok(calls.includes("sudo losetup --detach /dev/cowtree-owned-test"));
+      await assert.rejects(readdir(mount), { code: "ENOENT" });
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 });

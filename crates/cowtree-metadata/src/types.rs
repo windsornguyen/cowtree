@@ -17,7 +17,7 @@ impl ResourcePath {
             || value.len() > 4096
             || value.contains('\0')
             || value.split('/').any(|part| part.is_empty() || part == "." || part == "..")
-            || value.split('/').next() == Some(".git")
+            || value.split('/').any(|part| part.eq_ignore_ascii_case(".git"))
         {
             return Err(Error::InvalidPath(value));
         }

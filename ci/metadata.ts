@@ -1,5 +1,5 @@
-import { defineMatrix, format, job, workflow } from "@dedalus-labs/hollywood";
-import { checkout, run } from "./steps.ts";
+import { defineMatrix, expr, format, job, workflow } from "@dedalus-labs/hollywood";
+import { checkout, run, uv } from "./steps.ts";
 
 const platforms = defineMatrix({ os: ["ubuntu-24.04", "macos-latest"] });
 export const metadata = workflow(
@@ -38,14 +38,29 @@ export const metadata = workflow(
             "-D",
             "warnings",
           ]),
-          run("Test crashes and concurrent publication", "cargo", [
-            "+1.97.1",
-            "test",
-            "--locked",
-            "--workspace",
-            "--all-targets",
-            "--all-features",
-          ]),
+          {
+            ...run("Update Linux package index", "sudo", ["apt-get", "update"]),
+            if: expr<boolean>("runner.os == 'Linux'"),
+          },
+          {
+            ...run("Install Linux reflink test filesystem", "sudo", [
+              "apt-get", "install", "-y", "btrfs-progs",
+            ]),
+            if: expr<boolean>("runner.os == 'Linux'"),
+          },
+          run("Test crashes and concurrent publication on native reflinks", "bash", ["scripts/metadata_test.sh"]),
+          { ...uv, if: expr<boolean>("runner.os == 'macOS'") },
+          {
+            ...run("Test managed Python workspaces on APFS", "uv", [
+              "run", "--locked", "--no-default-groups", "--group", "test",
+              "pytest", "tests/test_workspace.py", "-q",
+            ]),
+            if: expr<boolean>("runner.os == 'macOS'"),
+            env: {
+              COWTREE_METADATA_BINARY: expr<string>("format('{0}/target/debug/cowtree-metadata', github.workspace)"),
+              COWTREE_EXPECT_SUPPORTED: "1",
+            },
+          },
           {
             ...run("Run production example with test hooks disabled", "cargo", [
               "+1.97.1",

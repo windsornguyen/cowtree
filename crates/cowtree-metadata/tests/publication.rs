@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Windsor Nguyen
+
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;

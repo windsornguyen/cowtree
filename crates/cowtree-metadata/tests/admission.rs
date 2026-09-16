@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Windsor Nguyen
+
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use cowtree_metadata::{

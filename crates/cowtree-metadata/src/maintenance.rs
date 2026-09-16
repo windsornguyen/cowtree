@@ -104,6 +104,9 @@ fn prune_epochs(connection: &Connection, keep: u32) -> Result<usize> {
         "DELETE FROM epochs
          WHERE version NOT IN (SELECT version FROM epochs ORDER BY version DESC LIMIT ?1)
          AND version NOT IN (SELECT version FROM retained)
+         AND version NOT IN (SELECT version FROM bindings)
+         AND version NOT IN (SELECT pending_version FROM bindings WHERE pending_version IS NOT NULL)
+         AND (version != 1 OR NOT EXISTS(SELECT 1 FROM imports WHERE ready=1))
          AND version NOT IN (SELECT captured_at FROM proposals WHERE state='pending')
          AND version NOT IN (SELECT parent FROM proposals WHERE state='pending' AND parent IS NOT NULL)",
         [keep],
@@ -164,7 +167,7 @@ fn protect_candidates(
     protected: &mut BTreeSet<ObjectId>,
 ) -> Result<()> {
     let mut statement = connection
-        .prepare("SELECT root,ready FROM proposals WHERE state='pending' AND root IS NOT NULL")?;
+        .prepare("SELECT root,ready FROM proposals WHERE state='pending' AND root IS NOT NULL UNION ALL SELECT root,ready FROM imports")?;
     let rows =
         statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))?;
     for row in rows {

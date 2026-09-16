@@ -9,6 +9,7 @@ import pytest
 from cowtree.core import inspect_path, list_all_worktrees
 from cowtree.exec import CommandRunner
 from cowtree.types import CommandResult, WorktreeAddRequest
+from cowtree.workspace import Workspace
 
 
 @dataclass(frozen=True)
@@ -81,3 +82,23 @@ def cow_repository(repository: Repository) -> Repository:
         assert report.reason is not None
         pytest.skip(report.reason)
     return repository
+
+
+@pytest.fixture(scope="session")
+def metadata_binary() -> Path:
+    configured = os.environ.get("COWTREE_METADATA_BINARY")
+    if configured is None:
+        pytest.skip("set COWTREE_METADATA_BINARY to run native workspace integration tests")
+    binary = Path(configured).resolve()
+    assert binary.is_file(), f"required metadata executable missing: {binary}"
+    return binary
+
+
+@pytest.fixture
+def workspace(cow_repository: Repository, metadata_binary: Path, tmp_path: Path) -> Workspace:
+    result = Workspace.create(
+        source=cow_repository.path,
+        authority=tmp_path / "authority",
+        binary=metadata_binary,
+    )
+    return result

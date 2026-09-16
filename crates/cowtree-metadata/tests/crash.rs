@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Windsor Nguyen
+
 //! Real process exits at publication boundaries preserve pins and acknowledgement recovery.
 
 #![cfg(feature = "fault-injection")]

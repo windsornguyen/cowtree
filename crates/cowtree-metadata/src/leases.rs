@@ -18,12 +18,16 @@ impl Store {
         active(&tx, leaf)?;
         let (_, root) = read_tip(&tx)?;
         let snapshot = read_snapshot(&self.objects, &root)?;
+        let installed = crate::installation::bound_snapshot(&tx, &self.objects, leaf)?;
         let mut grants = Vec::with_capacity(paths.len());
         for path in paths {
             exclude_other_holders(&tx, leaf, path)?;
             if let Some(grant) = read_grant(&tx, path)? {
                 grants.push(grant);
                 continue;
+            }
+            if installed.as_ref().is_some_and(|tree| tree.get(path) != snapshot.get(path)) {
+                return Err(Error::TreeOutdated(leaf.sql()));
             }
             let view = read_view(&tx, leaf, path)?;
             if view.as_ref().is_some_and(LeafView::dirty) {
@@ -57,8 +61,8 @@ impl Store {
                 None => 0,
             };
             tx.execute(
-                "INSERT INTO views VALUES(?1,?2,?3,?3,?4) ON CONFLICT(leaf,path) DO UPDATE
-                 SET origin=excluded.origin,value=excluded.value,revision=excluded.revision",
+                "INSERT INTO views(leaf,path,origin,value,revision,captured) VALUES(?1,?2,?3,?3,?4,0) ON CONFLICT(leaf,path) DO UPDATE
+                 SET origin=excluded.origin,value=excluded.value,revision=excluded.revision,captured=0",
                 params![
                     grant.leaf.sql(),
                     grant.path.as_str(),
@@ -75,6 +79,24 @@ impl Store {
 
     /// Stage a logical value under a live, activated grant and consume its upload pin.
     pub fn edit(&mut self, grant: &Grant, value: Option<Entry>) -> Result<LeafView> {
+        self.edit_from(grant, value, false)
+    }
+
+    /// Record a value verified against the bound filesystem in the same edit transaction.
+    pub(crate) fn edit_captured(
+        &mut self,
+        grant: &Grant,
+        value: Option<Entry>,
+    ) -> Result<LeafView> {
+        self.edit_from(grant, value, true)
+    }
+
+    fn edit_from(
+        &mut self,
+        grant: &Grant,
+        value: Option<Entry>,
+        captured: bool,
+    ) -> Result<LeafView> {
         self.capacity()?;
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let stored = validate_grant(&tx, grant)?;
@@ -87,8 +109,8 @@ impl Store {
         }
         let revision = next_revision(view.edit_revision)?;
         tx.execute(
-            "UPDATE views SET value=?3,revision=?4 WHERE leaf=?1 AND path=?2",
-            params![grant.leaf.sql(), grant.path.as_str(), entry_json(&value)?, revision],
+            "UPDATE views SET value=?3,revision=?4,captured=?5 WHERE leaf=?1 AND path=?2",
+            params![grant.leaf.sql(), grant.path.as_str(), entry_json(&value)?, revision, captured],
         )?;
         if let Some(entry) = &value {
             tx.execute(
@@ -154,7 +176,7 @@ impl Store {
         if own_lease {
             if let Some(view) = read_view(&tx, leaf, path)? {
                 tx.execute(
-                    "UPDATE views SET value=origin,revision=?3 WHERE leaf=?1 AND path=?2",
+                    "UPDATE views SET value=origin,revision=?3,captured=0 WHERE leaf=?1 AND path=?2",
                     params![leaf.sql(), path.as_str(), next_revision(view.edit_revision)?],
                 )?;
             }
@@ -180,6 +202,7 @@ impl Store {
              WHERE leaf=?1 AND state='pending'",
             [leaf.sql()],
         )?;
+        tx.execute("DELETE FROM bindings WHERE leaf=?1", [leaf.sql()])?;
         tx.execute("DELETE FROM leaves WHERE id=?1", [leaf.sql()])?;
         tx.commit()?;
         Ok(())
