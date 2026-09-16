@@ -83,7 +83,8 @@ for filesystem in btrfs xfs-reflink xfs-no-reflink ext4; do
     mount -- "$loop_device" "$mountpoint"
     mounted=1
     if (( expected )); then
-        TMPDIR="$mountpoint" COWTREE_EXPECT_SUPPORTED=1 uv run --locked --no-default-groups --project "$repo" --group test \
+        # Test trees use --basetemp; helper/capture files must not keep this mount busy.
+        COWTREE_EXPECT_SUPPORTED=1 uv run --locked --no-default-groups --project "$repo" --group test \
             pytest "$repo/tests" "$repo/src" --basetemp "$mountpoint/tests" -q
     else
         COWTREE_EXPECT_SUPPORTED=0 uv run --locked --no-default-groups --project "$repo" --group test \
