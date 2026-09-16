@@ -14,11 +14,16 @@ from .conftest import Repository
 
 
 @pytest.mark.parametrize("locked", [False, True])
+@pytest.mark.parametrize("name", ["failure", "cafe\u0301"])
 def test_invariant_checkout_failure_rolls_back_owned_state(
-    cow_repository: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, locked: bool
+    cow_repository: Repository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    locked: bool,
+    name: str,
 ) -> None:
     repo = cow_repository
-    target = tmp_path / "failure"
+    target = tmp_path / name
 
     def fail_clone(source: Path, target: Path) -> None:
         del source, target
@@ -28,6 +33,7 @@ def test_invariant_checkout_failure_rolls_back_owned_state(
     with pytest.raises(CowtreeError, match="injected local clone I/O failure"):
         add_worktree(request=repo.add_request(target=target, branch="failure", lock=locked))
     repo.assert_absent(target=target, branch="failure")
+    assert repo.registered == {repo.path}
 
 
 def test_invariant_source_mutation_cannot_publish_a_dirty_clone(

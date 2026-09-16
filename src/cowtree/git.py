@@ -124,6 +124,20 @@ class GitRepository:
         exists = result.returncode == 0
         return exists
 
+    def find_worktree(self, path: Path) -> Worktree | None:
+        """Match registrations by filesystem identity, including normalized names."""
+        for worktree in self.worktrees():
+            if worktree.path == path:
+                return worktree
+            try:
+                matches = worktree.path.samefile(path)
+            except FileNotFoundError:
+                # Git also lists missing, prunable worktrees.
+                continue
+            if matches:
+                return worktree
+        return None
+
 
 def resolve_path(path: Path) -> Path:
     """Resolve a caller path, preserving invalid-path errors at the API boundary."""

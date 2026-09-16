@@ -122,6 +122,11 @@ and ``reason: str | None``. Branch names are full refs such as
 ``to_json_text()`` serializes these fields with ``path`` as a string;
 ``cowtree list --json`` returns an array of the same objects.
 
+Paths use Git's registered spelling. On filesystems that treat different Unicode
+spellings as the same name, cowtree matches existing directories by filesystem
+identity during creation and rollback. Missing unrelated registrations do not
+prevent an independent add.
+
 ``inspect_path`` returns a frozen ``DoctorReport`` with ``path: Path``,
 ``filesystem: FilesystemKind``, ``clone_tool: CloneTool | None``, and
 ``reason: str | None``. The enums live in ``cowtree.types``. Filesystem values

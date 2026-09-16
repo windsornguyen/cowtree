@@ -36,7 +36,22 @@ def test_invariant_unsupported_filesystem_leaves_no_state(
 
 
 @pytest.mark.parametrize(
-    "name", ["with space", "tab\tname", "line\nname", "carriage\rname", "hyphen-name"]
+    "name",
+    [
+        "with space",
+        "tab\tname",
+        "line\nname",
+        "carriage\rname",
+        "-leading",
+        "--",
+        "quote'\"name",
+        "back\\slash",
+        "café",
+        "cafe\u0301",
+        "🐄",
+        ".hidden",
+        "x" * 200,
+    ],
 )
 def test_invariant_tracked_names_and_worktree_paths_round_trip(
     cow_repository: Repository, tmp_path: Path, name: str
@@ -47,9 +62,9 @@ def test_invariant_tracked_names_and_worktree_paths_round_trip(
     repo.commit()
     target = tmp_path / name
     worktree = add_worktree(request=repo.add_request(target=target, branch="names"))
-    assert worktree.path == target.resolve()
+    assert worktree.path.samefile(target)
     assert (target / filename).read_bytes() == (repo.path / filename).read_bytes()
-    assert target.resolve() in repo.registered
+    assert any(path.samefile(target) for path in repo.registered)
     repo.assert_clean(target=target)
     remove_worktree(path=target, source=repo.path)
     assert not target.exists()
