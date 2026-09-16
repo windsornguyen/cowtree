@@ -1,11 +1,11 @@
 # Metadata qualification results
 
-All four measured trials passed: **80 atomic batches, 104,646 file checks,
+All four pre-final candidate trials passed: **80 atomic batches, 104,646 file checks,
 10,991 concurrent reader snapshots, and no BUSY failures**. Each batch changed
 four files. Publication throughput varied substantially on the shared host;
 these measurements do not establish a speedup over the earlier short baseline.
 
-The current qualification measures local SQLite publication with real file
+The initial candidate qualification measured local SQLite publication with real file
 capture and installation on APFS. It uses one writer, two reader connections,
 four file edits per atomic batch, and a complete filesystem oracle. Every
 successful trial checks the unchanged source, the writer, and a freshly installed
@@ -91,3 +91,40 @@ build correctness after sampled edits, or exclusive physical storage savings.
 Object `st_blocks` values include shared clone blocks and must not be interpreted
 as unique physical disk usage. The dedicated crash and isolated-volume space
 benchmarks cover separate questions.
+
+
+## Final committed runtime
+
+A separate production-mode run qualified committed runtime
+`ba704f48109e3157cf31b29445c98859c49c2241`. The checkout was clean before building
+with `cargo build --release --no-default-features -p cowtree-metadata --example qualify`.
+The release executable SHA-256 was
+`f58ab8a1e9f06bdb3a004d1b6c05e1f64a4f97a94aeb68e0292782c9ff6cf6ce`.
+All 48 recorded Rust-workspace file hashes, the executable digest, and the Git
+revision remained identical after the run. This removes the uncommitted-source
+ambiguity from the earlier four candidate trials.
+
+The final run used the same clean CPython 3.13.0 checkout, seed 1, 20 four-file
+batches, and two concurrent readers. **All 14,646 full-file checks and 2,107
+reader snapshots passed, with no BUSY failures.** The final committed version
+was 21, and the source checkout remained clean.
+
+| Final-runtime observation | Value |
+| --- | ---: |
+| Tracked source files | 4,882 |
+| Atomic batches | 20 |
+| Publication-loop throughput | 1.362 batches/s |
+| Mean commit latency | 420.6 ms |
+| Maximum commit latency | 771.1 ms |
+| Maximum observed writer-lock acquisition | 215.3 ms |
+| Initial import | 56.7 s |
+| Fresh receiver installation | 92.5 s |
+| Complete qualification duration | 170.3 s |
+| Database / WAL after maintenance | 307,200 / 0 bytes |
+| Minimum observed free disk | 142.72 GiB |
+
+This is one final-commit trial, not a repeated-trial speed comparison with the
+earlier candidate measurements. The same workload, retention, shared-host,
+application-semantics, crash, and physical-space limits described above apply.
+Raw results and before/after source hashes are retained in `final-head.json` and
+`final-head-provenance.json` in the local qualification artifact directory.
