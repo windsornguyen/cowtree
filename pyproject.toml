@@ -26,7 +26,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "pydantic>=2.12,<3",
+]
 
 [project.scripts]
 cowtree = "cowtree.cli:main"

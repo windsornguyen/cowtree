@@ -17,7 +17,7 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 0x43575452;
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 3;
 
 /// One connection to the same-host SQLite authority and its immutable object directory.
 pub struct Store {
@@ -69,10 +69,13 @@ impl Store {
         let application: i64 =
             connection.pragma_query_value(None, "application_id", |r| r.get(0))?;
         let schema: i64 = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if application != APPLICATION_ID || schema != SCHEMA_VERSION {
+        if application != APPLICATION_ID || !(1..=SCHEMA_VERSION).contains(&schema) {
             return Err(Error::Schema);
         }
         configure(&connection)?;
+        if schema != SCHEMA_VERSION {
+            migrate(&connection)?;
+        }
         let raw: String = connection.query_row(
             "SELECT limits_json FROM settings WHERE singleton=1",
             [],
@@ -90,6 +93,12 @@ impl Store {
     /// Read the capacity policy fixed when this authority was created.
     pub fn limits(&self) -> &Limits {
         &self.limits
+    }
+    /// List active leaf identities so an owning filesystem adapter can recover allocations.
+    pub fn leaves(&self) -> Result<Vec<LeafId>> {
+        let mut statement = self.connection.prepare("SELECT id FROM leaves ORDER BY id")?;
+        let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.map(|row| LeafId::from_sql(row?)).collect()
     }
     /// Read the current committed version and immutable manifest identity together.
     pub fn tip(&self) -> Result<(Version, ObjectId)> {
@@ -261,4 +270,20 @@ pub(crate) fn next_token(tx: &Transaction<'_>) -> Result<i64> {
     let next = token.checked_add(1).ok_or(Error::CounterExhausted)?;
     tx.execute("UPDATE settings SET next_token=?1 WHERE singleton=1", [next])?;
     Ok(token)
+}
+
+// Re-read the version under the writer lock so concurrent openers migrate once.
+fn migrate(connection: &Connection) -> Result<()> {
+    let tx = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    match version {
+        SCHEMA_VERSION => return Ok(()),
+        1 => tx.execute_batch("ALTER TABLE proposals ADD COLUMN batch_id TEXT;")?,
+        2 => {}
+        _ => return Err(Error::Schema),
+    }
+    tx.execute_batch("CREATE TABLE client_pins(object TEXT PRIMARY KEY);")?;
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    tx.commit()?;
+    Ok(())
 }

@@ -6,7 +6,8 @@ into an ordered snapshot history. It complements the `workspace protocol
 <../docs/workspace-protocol.rst>`_ and the existing `Workspace model <README.md>`_.
 It focuses on captured proposal tokens, batches and finite induction. It omits
 reservation activation and leaf drop, so it is not a refinement of Workspace.
-It does not replace or reproduce the unavailable CowTree or EpochLog models.
+Core, CowTree and EpochLog are now retained alongside it. No checked
+refinement connects these models.
 
 Scope
 -----
@@ -87,11 +88,13 @@ Replay model traces through the real API to test its transaction boundaries.
 Reproduction
 ------------
 
-Use the official ``tla2tools.jar`` v1.8.0 release with SHA-256::
+The historical review used ``tla2tools.jar`` v1.8.0 with SHA-256::
 
     20322939d1b55bb0a3f674ab34bb69b87c711a6b35559d32445cb7d7f6d3bb58
 
-The review runs use Adoptium Java 21 on macOS arm64. Point ``TLA2TOOLS_JAR``
+The current combined runner uses the verified release asset documented in
+`verification <../docs/verification.rst>`_; all seven cases have been rerun.
+The historical review runs used Adoptium Java 21 on macOS arm64. Point ``TLA2TOOLS_JAR``
 at the verified JAR. Copy the modules and configurations into a new task-owned
 directory before running TLC so traces and state files do not modify the source.
 From that directory::

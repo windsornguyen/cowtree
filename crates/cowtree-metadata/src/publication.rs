@@ -31,28 +31,29 @@ impl ProposalState {
     }
 }
 
-struct StoredProposal {
-    input_hash: String,
+pub(crate) struct StoredProposal {
+    pub(crate) input_hash: String,
     body: Option<String>,
     state: ProposalState,
-    attempt: i64,
-    parent: Option<i64>,
+    pub(crate) attempt: i64,
+    pub(crate) parent: Option<i64>,
     root: Option<String>,
-    ready: bool,
+    pub(crate) ready: bool,
     committed_version: Option<i64>,
+    pub(crate) batch_id: Option<String>,
 }
 impl StoredProposal {
-    fn body(&self) -> Result<Proposal> {
+    pub(crate) fn body(&self) -> Result<Proposal> {
         Ok(serde_json::from_str(self.body.as_deref().ok_or(Error::Aborted)?)?)
     }
-    fn pending(&self) -> Result<()> {
+    pub(crate) fn pending(&self) -> Result<()> {
         match self.state {
             ProposalState::Pending => Ok(()),
             ProposalState::Aborted => Err(Error::Aborted),
             ProposalState::Committed => Err(Error::RequestConflict),
         }
     }
-    fn matches(&self, candidate: &Candidate) -> Result<()> {
+    pub(crate) fn matches(&self, candidate: &Candidate) -> Result<()> {
         let attempt = i64::try_from(candidate.attempt).map_err(|_| Error::CandidateMismatch)?;
         if self.attempt != attempt
             || self.parent != Some(candidate.parent.sql())
@@ -62,7 +63,7 @@ impl StoredProposal {
         }
         Ok(())
     }
-    fn receipt(&self, request: RequestId) -> Result<Option<Receipt>> {
+    pub(crate) fn receipt(&self, request: RequestId) -> Result<Option<Receipt>> {
         if self.state != ProposalState::Committed {
             return Ok(None);
         }
@@ -73,6 +74,11 @@ impl StoredProposal {
         }))
     }
 }
+enum CommitCheck {
+    Committed(Receipt),
+    Prepared(Snapshot),
+}
+
 impl Store {
     /// Freeze selected dirty values, origins, and tokens under one request identity.
     pub fn propose(&mut self, input: ProposalInput) -> Result<Proposal> {
@@ -141,7 +147,7 @@ impl Store {
             let snapshot = read_snapshot(&self.objects, &root)?;
             validate(&tx, &proposal, &snapshot)?;
             let attempt = stored.attempt.checked_add(1).ok_or(Error::CounterExhausted)?;
-            tx.execute("UPDATE proposals SET attempt=?1,parent=?2,root=NULL,ready=0 WHERE leaf=?3 AND sequence=?4",
+            tx.execute("UPDATE proposals SET attempt=?1,parent=?2,root=NULL,ready=0,batch_id=NULL WHERE leaf=?3 AND sequence=?4",
                 params![attempt,parent,request.leaf.sql(),request.seq()?])?;
             tx.commit()?;
             (proposal, parent, snapshot, attempt)
@@ -201,31 +207,44 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+    fn check_commit(&mut self, candidate: &Candidate) -> Result<CommitCheck> {
+        let root = {
+            let tx = self.connection.transaction()?;
+            let stored = single_candidate(&tx, candidate)?;
+            if let Some(receipt) = stored.receipt(candidate.request)? {
+                return Ok(CommitCheck::Committed(receipt));
+            }
+            let (tip, root) = read_tip(&tx)?;
+            if tip != candidate.parent.sql() {
+                return Err(Error::TipChanged { expected: candidate.parent.sql(), actual: tip });
+            }
+            tx.commit()?;
+            root
+        };
+        crate::fault::checkpoint("before-commit-verification");
+        let snapshot = verify_contents(&self.objects, &root, &candidate.root)?;
+        crate::fault::checkpoint("after-commit-verification");
+        Ok(CommitCheck::Prepared(snapshot))
+    }
+
     /// Publish only the exact prepared candidate after rechecking tip, origins, and tokens.
     pub fn commit(&mut self, candidate: Candidate) -> Result<Receipt> {
         self.capacity()?;
+        let snapshot = match self.check_commit(&candidate)? {
+            CommitCheck::Committed(receipt) => return Ok(receipt),
+            CommitCheck::Prepared(snapshot) => snapshot,
+        };
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let stored = required(&tx, candidate.request)?;
-        stored.matches(&candidate)?;
+        let stored = single_candidate(&tx, &candidate)?;
         if let Some(receipt) = stored.receipt(candidate.request)? {
             return Ok(receipt);
         }
-        stored.pending()?;
-        if !stored.ready {
-            return Err(Error::CandidateNotReady);
-        }
-        let (tip, root) = read_tip(&tx)?;
+        let (tip, _) = read_tip(&tx)?;
         if tip != candidate.parent.sql() {
             return Err(Error::TipChanged { expected: candidate.parent.sql(), actual: tip });
         }
         let proposal = stored.body()?;
-        let snapshot = read_snapshot(&self.objects, &root)?;
         validate(&tx, &proposal, &snapshot)?;
-        // Verify every referenced byte while the GC exclusion transaction is held.
-        let prepared = read_snapshot(&self.objects, candidate.root.as_str())?;
-        for entry in prepared.values() {
-            self.objects.read(&entry.object)?;
-        }
         let version = tip.checked_add(1).ok_or(Error::CounterExhausted)?;
         tx.execute("INSERT INTO epochs VALUES(?1,?2)", params![version, candidate.root.as_str()])?;
         tx.execute("UPDATE settings SET tip=?1 WHERE singleton=1", [version])?;
@@ -255,10 +274,29 @@ impl Store {
     pub fn result(&self, request: RequestId) -> Result<Option<Receipt>> {
         required(&self.connection, request)?.receipt(request)
     }
-    /// Retire a pending request; its sequence can never be reused.
+    /// Retire a pending request or the next unsubmitted identity without permitting reuse.
     pub fn abort(&mut self, request: RequestId) -> Result<()> {
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let stored = required(&tx, request)?;
+        let Some(stored) = lookup(&tx, request)? else {
+            let sequence = request.seq()?;
+            let expected = active(&tx, request.leaf)?;
+            if sequence < expected {
+                return Err(Error::RequestExpired(sequence));
+            }
+            if sequence != expected {
+                return Err(Error::RequestSequence { expected, actual: sequence });
+            }
+            admit_proposal(&tx, &self.limits)?;
+            let (version, _) = read_tip(&tx)?;
+            tx.execute("INSERT INTO proposals(leaf,sequence,input_hash,state,captured_at) VALUES(?1,?2,'','aborted',?3)", params![request.leaf.sql(),sequence,version])?;
+            let next = sequence.checked_add(1).ok_or(Error::CounterExhausted)?;
+            tx.execute(
+                "UPDATE leaves SET next_sequence=?1 WHERE id=?2",
+                params![next, request.leaf.sql()],
+            )?;
+            tx.commit()?;
+            return Ok(());
+        };
         if stored.state == ProposalState::Aborted {
             return Ok(());
         }
@@ -272,10 +310,13 @@ impl Store {
         Ok(())
     }
 }
-fn lookup(connection: &Connection, request: RequestId) -> Result<Option<StoredProposal>> {
+pub(crate) fn lookup(
+    connection: &Connection,
+    request: RequestId,
+) -> Result<Option<StoredProposal>> {
     let stored = connection
         .query_row(
-            "SELECT input_hash,body,state,attempt,parent,root,ready,committed_version
+            "SELECT input_hash,body,state,attempt,parent,root,ready,committed_version,batch_id
          FROM proposals WHERE leaf=?1 AND sequence=?2",
             params![request.leaf.sql(), request.seq()?],
             |r| {
@@ -288,13 +329,14 @@ fn lookup(connection: &Connection, request: RequestId) -> Result<Option<StoredPr
                     root: r.get(5)?,
                     ready: r.get(6)?,
                     committed_version: r.get(7)?,
+                    batch_id: r.get(8)?,
                 })
             },
         )
         .optional()?;
     Ok(stored)
 }
-fn required(connection: &Connection, request: RequestId) -> Result<StoredProposal> {
+pub(crate) fn required(connection: &Connection, request: RequestId) -> Result<StoredProposal> {
     lookup(connection, request)?.ok_or(Error::RequestExpired(request.seq()?))
 }
 fn capture(
@@ -324,7 +366,11 @@ fn capture(
         edit_revision: u64::try_from(revision).map_err(|_| Error::Schema)?,
     })
 }
-fn validate(connection: &Connection, proposal: &Proposal, snapshot: &Snapshot) -> Result<()> {
+pub(crate) fn validate(
+    connection: &Connection,
+    proposal: &Proposal,
+    snapshot: &Snapshot,
+) -> Result<()> {
     active(connection, proposal.request.leaf)?;
     for change in &proposal.changes {
         let current: Option<(i64, i64, bool)> = connection
@@ -343,7 +389,7 @@ fn validate(connection: &Connection, proposal: &Proposal, snapshot: &Snapshot) -
     }
     Ok(())
 }
-fn validate_namespace(snapshot: &Snapshot, max_paths: u32) -> Result<()> {
+pub(crate) fn validate_namespace(snapshot: &Snapshot, max_paths: u32) -> Result<()> {
     if snapshot.len() > max_paths as usize {
         return Err(Error::Limit(crate::LimitKind::SnapshotPaths));
     }
@@ -358,7 +404,7 @@ fn validate_namespace(snapshot: &Snapshot, max_paths: u32) -> Result<()> {
     Ok(())
 }
 
-fn admit_proposal(connection: &Connection, limits: &crate::Limits) -> Result<()> {
+pub(crate) fn admit_proposal(connection: &Connection, limits: &crate::Limits) -> Result<()> {
     let (epochs, pending, requests): (i64, i64, i64) = connection.query_row(
         "SELECT (SELECT count(*) FROM epochs),
          (SELECT count(*) FROM proposals WHERE state='pending'),
@@ -374,4 +420,34 @@ fn admit_proposal(connection: &Connection, limits: &crate::Limits) -> Result<()>
         return Err(Error::Limit(crate::LimitKind::MetadataHistory));
     }
     Ok(())
+}
+
+fn single_candidate(connection: &Connection, candidate: &Candidate) -> Result<StoredProposal> {
+    let stored = required(connection, candidate.request)?;
+    if stored.batch_id.is_some() {
+        return Err(Error::BatchConflict("candidate belongs to a batch".into()));
+    }
+    stored.matches(candidate)?;
+    if stored.state != ProposalState::Committed {
+        stored.pending()?;
+        if !stored.ready {
+            return Err(Error::CandidateNotReady);
+        }
+    }
+    Ok(stored)
+}
+
+/// Pending parent and candidate pins retain all immutable bytes during verification.
+/// A superseded or aborted pin can disappear; final metadata checks then forbid commit.
+pub(crate) fn verify_contents(
+    objects: &crate::objects::ObjectStore,
+    parent: &str,
+    candidate: &ObjectId,
+) -> Result<Snapshot> {
+    let snapshot = read_snapshot(objects, parent)?;
+    let prepared = read_snapshot(objects, candidate.as_str())?;
+    for entry in prepared.values() {
+        objects.read(&entry.object)?;
+    }
+    Ok(snapshot)
 }

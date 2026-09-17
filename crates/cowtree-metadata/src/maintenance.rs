@@ -134,7 +134,9 @@ fn protected_objects(connection: &Connection, objects: &ObjectStore) -> Result<B
             protected.insert(entry.object);
         }
     }
-    for upload in text_rows(connection, "SELECT object FROM uploads")? {
+    for upload in
+        text_rows(connection, "SELECT object FROM uploads UNION SELECT object FROM client_pins")?
+    {
         protected.insert(ObjectId::parse(&upload)?);
     }
     for body in text_rows(connection, "SELECT body FROM proposals WHERE state='pending'")? {

@@ -45,6 +45,7 @@ class CowtreeCLI:
         """Configure each supported command without accepting arbitrary Git flags."""
         self.parser = argparse.ArgumentParser(prog="cowtree", allow_abbrev=False)
         commands = self.parser.add_subparsers(title="commands")
+        commands.add_parser("workspace", help="manage warm workspaces and checked publication")
         parsers: dict[Command, argparse.ArgumentParser] = {}
         for command in Command:
             parser = commands.add_parser(command.value, allow_abbrev=False)
@@ -75,6 +76,11 @@ class CowtreeCLI:
 
     def run(self, argv: list[str]) -> int:
         """Parse explicit arguments and return the command's exit status."""
+        if argv[:1] == ["workspace"]:
+            from cowtree.workspace_cli import run
+
+            code = run(argv=argv[1:])
+            return code
         options = Arguments()
         try:
             self.parser.parse_args(args=argv, namespace=options)

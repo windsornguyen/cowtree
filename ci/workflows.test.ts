@@ -101,6 +101,8 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
   assert.deepEqual(calls, [
     { file: "sudo", args: ["apt-get", "update"] },
     { file: "sudo", args: ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"] },
+    { file: "rustup", args: ["toolchain", "install", "1.97.1", "--profile", "minimal"] },
+    { file: "cargo", args: ["+1.97.1", "build", "--locked", "-p", "cowtree-metadata"] },
     { file: "sudo", args: ["env", "PATH=/installed uv:/usr/bin", "bash", "scripts/fs_matrix.sh"] },
   ]);
   await assert.rejects(checkFilesystems(exec, undefined), /PATH is required/);

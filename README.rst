@@ -5,6 +5,23 @@ cowtree
 of tracked files. Cloned regular files initially share storage; writing to one
 does not modify the other.
 
+Managed workspaces
+------------------
+
+``cowtree workspace`` adds warm cache inheritance, retained private checkpoints,
+checked source publication, synchronization, recovery, and collection. The Rust
+SQLite service owns publication; Python owns the real filesystem installation.
+
+Start with the `managed workspace guide <docs/managed-workspaces.rst>`_. It lists
+the complete CLI and Python API, JSON failures, editor coordination rules, and
+a runnable workflow. The original tracked-file commands below remain supported.
+
+`Build-cache measurements <docs/warm-cache.rst>`_ demonstrate actual compiler
+reuse and report total creation cost. `Lifecycle qualification
+<docs/workspace-qualification.rst>`_ checks independently predicted file states
+through publication and teardown. `Verification <docs/verification.rst>`_
+describes model checks, implementation replay, and their limits.
+
 Command line
 ------------
 

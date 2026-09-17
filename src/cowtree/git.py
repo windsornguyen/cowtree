@@ -64,8 +64,20 @@ class GitRepository:
         )
         return status
 
+    def check_detached(self, expected: tuple[str, ...]) -> None:
+        """Refuse to move a caller's branch or an unexpected managed HEAD."""
+        result = self.run(args=["symbolic-ref", "--quiet", "HEAD"], check=False)
+        if result.returncode == 0:
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, "managed leaf must remain detached"
+            )
+        if result.returncode != 1:
+            raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, result.stderr)
+        if self.head() not in expected:
+            raise CowtreeError(CowtreeErrorCode.HEAD_MISMATCH, "managed leaf HEAD changed")
+
     @contextmanager
-    def lock(self) -> Iterator[None]:
+    def lock(self) -> Iterator[int]:
         """Serialize complete cowtree operations across all linked worktrees."""
         common = self.capture(args=["rev-parse", "--path-format=absolute", "--git-common-dir"])
         path = Path(common.removesuffix("\n")) / "cowtree.lock"
@@ -73,7 +85,7 @@ class GitRepository:
         with path.open("a+b") as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
             try:
-                yield
+                yield lock.fileno()
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 

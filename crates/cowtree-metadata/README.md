@@ -3,9 +3,9 @@
 `cowtree-metadata` is a Rust library and JSON command interface for a single-host
 workspace metadata authority. It implements durable snapshots, fenced path
 reservations, logical leaf edits, publication receipts, and explicit retention.
-The existing Python `cowtree` Git-worktree commands do not call this crate yet.
-Activation updates a logical view; a filesystem installer and its acknowledgement
-protocol are a separate integration step.
+The Python managed workspace owns physical installation, Git projection, and
+checked publication. This crate owns the SQLite state and immutable source objects;
+activation updates its logical view.
 
 ## Run
 
@@ -33,9 +33,9 @@ JSON
 
 `init` requires a new directory beneath an existing parent. Other commands require
 an initialized store. Responses have `status: "ok"` with a typed `output`, or
-`status: "error"` with a diagnostic `message`. A request error does not terminate
-the stream; callers must inspect each response. Rust callers receive the typed
-`Error` enum. Input lines are limited to 128 MiB. `stage.data` is a JSON byte array;
+`status: "error"` with a stable `code`, `retry_action`, typed `details`, and a
+diagnostic `message`. A request error does not terminate the stream; callers must
+inspect each response. Rust callers receive the typed `Error` enum. Input lines are limited to 128 MiB. `stage.data` is a JSON byte array;
 the encoded request limit can be reached before the library's 64 MiB blob limit.
 
 ## Operations
@@ -44,10 +44,12 @@ the encoded request limit can be reached before the library's 64 MiB blob limit.
 |---|---|
 | `create` / `init`, `open` | Create a new authority or validate schema and required durability settings. Capture absolute paths so later `chdir` cannot redirect objects. |
 | `create_leaf` | Allocate a leaf identity that is never reused. |
+| `leaves`, `grants` | Inspect active leaf identities and current reservations for recovery and filesystem namespace checks. Each response is a consistent metadata read. |
 | `tip`, `snapshot`, `read` | Return the current version/root, a retained manifest, or verified bytes at a retained version. Absence is explicit. |
 | `acquire` | Reserve all requested paths atomically. An ancestor/descendant overlap excludes other leaves. Reacquiring an existing reservation keeps its token. |
 | `activate` | Install the captured origin into the logical view once. Repeated activation preserves later edits. |
 | `stage` | Pin, write, verify, and flush immutable bytes. A generation fences canceled or replaced uploads. |
+| `stage_file` | Read a regular local file within the object limit and stage its bytes under the same upload protocol. Symlinks and directories are rejected. |
 | `edit` | Change or delete a logical entry under an activated current grant. New bytes require a ready upload owned by the leaf. |
 | `view` | Return retained origins, values, and edit revisions from one metadata snapshot. |
 | `release`, `revoke` | Release a grant or administratively revoke an exact path, preserving dirty data. Old tokens cannot publish or mutate a new grant. |
@@ -56,10 +58,17 @@ the encoded request limit can be reached before the library's 64 MiB blob limit.
 | `propose` | Freeze selected dirty values, origins, and tokens under a leaf/sequence request identity. |
 | `prepare` | Overlay that capture onto the current tip, pin the candidate, and persist its manifest. Each attempt supersedes the previous attempt. |
 | `commit` | Recheck exact candidate, current tip, lease generations, origins, and referenced bytes; atomically advance tip and record the receipt. |
+| `prepare_batch` | Prepare complete disjoint request membership against an explicit tip. Every member shares one parent and candidate root. |
+| `commit_batch` | Commit all exact prepared members and their receipts in one epoch, or publish none. |
+| `resolve` | Replace same-owner captured requests using an explicit source choice for every affected path; preserve later edits. |
 | `result` | Recover a retained receipt. Pending/aborted requests return no receipt; unknown or pruned identities return `RequestExpired`. |
-| `abort` | Retire a pending request without permitting reuse of its sequence. |
+| `abort` | Retire a pending request or the next unsubmitted identity without permitting reuse of its sequence. |
 | `retain`, `release_retention` | Pin/unpin an existing committed version. Manual pins have a configured count limit. |
+| `replace_client_pins` | Atomically replace the filesystem adapter's origin-object roots; verify newly pinned objects before committing. |
 | `maintain` | Prune history, collect unreferenced objects, reclaim free SQLite pages, and truncate the WAL. A blocked checkpoint returns `CheckpointBusy`. |
+
+`stage_file` takes `leaf` and an absolute local `path`. The caller keeps the file
+quiescent and checks the returned content identity against its capture.
 
 Use the JSON field names in `src/json_cli.rs`; library types are in `src/types.rs`.
 `release` and `activate` take `grant`; `edit` takes `grant` and nullable `value`.
@@ -69,6 +78,26 @@ Use the JSON field names in `src/json_cli.rs`; library types are in `src/types.r
 A successful commit updates a grant's captured origin. Reacquire the same path to
 refresh its `Grant` handle before editing again; the token remains unchanged.
 An old handle is rejected rather than silently refreshing its origin.
+
+`prepare_batch` takes `requests` and `expected_tip`; `commit_batch` takes the
+complete returned `candidate`. `resolve` takes `input: {request, sources, choices}`,
+where every choice maps a path to one of the same owner's source requests. A batch
+member cannot commit through the single-candidate interface. Low-level preparation
+and commit do not run checks; managed clients validate the exact union candidate
+before calling commit.
+
+Schema version 2 introduced nullable `proposals.batch_id`; version 3 adds client
+object pins. Opening a version 1 or 2 store migrates it in one serialized
+transaction, preserving pending attempts, receipts, and counters. Unsupported
+versions fail. Physical installation records remain
+owned by the Python workspace; this schema has no filesystem bindings.
+
+Failures use `database_busy` with `retry_same_request` only for SQLite BUSY/LOCKED.
+A tip change requires `reprepare`; a stale origin requires `resolve_conflict`.
+History and WAL limits require `run_maintenance`. Other admission failures need a
+caller decision. Object errors preserve identifiers, paths, and expected/actual
+digests. Malformed or oversized input uses `invalid_request`; oversized lines are
+drained before reading the next request.
 
 ## Publication order
 
@@ -81,9 +110,11 @@ An old handle is rejected rather than silently refreshing its origin.
    macOS also requests `F_FULLFSYNC`. Existing hash names are verified and flushed.
 4. A second transaction marks the exact candidate ready. A superseded attempt
    cannot mark a newer candidate ready.
-5. Commit takes the immediate writer transaction, validates the exact candidate
-   and all authority predicates, verifies referenced bytes, and writes the epoch,
-   tip, updated origins, and receipt. SQLite commits with `synchronous=FULL`.
+5. Commit verifies immutable bytes outside the writer transaction while proposal
+   pins retain them. It then takes the immediate writer transaction, rechecks the
+   exact candidate, tip, tokens, and origins, and writes the epoch, tip, updated
+   origins, and receipt. SQLite commits with `synchronous=FULL`. Revocation, abort,
+   or repreparation during verification prevents the old candidate from committing.
 6. Only after that commit does the caller receive the receipt. A retry with the
    same candidate returns that receipt without creating another version.
 
@@ -110,7 +141,11 @@ snapshot pins are admitted. Snapshot entries and retained views have separate
 
 Maintenance keeps the newest snapshot window, manual pins, and pending captured
 and prepared parents. It also protects lease origins, dirty views, upload hashes,
-pending captured entries, and candidate manifests. Receipts prove publication but
+pending captured entries, candidate manifests, and durable client origin pins.
+`replace_client_pins` is owned by one serialized filesystem adapter. It must retain
+old roots until replacement client records are durable; construction pins protect
+new objects during the transition. Schema 3 adds these pins and upgrades schemas
+1 and 2 atomically. Receipts prove publication but
 do not keep bytes alive; pin a version when its bytes must survive later pruning.
 A per-leaf sequence high-water mark prevents an expired request from executing
 again; dropping a leaf does not allow reuse of its identity.

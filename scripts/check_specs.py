@@ -11,13 +11,12 @@ import re
 import shutil
 import subprocess
 import tempfile
-import urllib.request
 
 
-TLC_VERSION = "1.7.4"
-TLC_SHA256 = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
-TLC_URL = f"https://github.com/tlaplus/tlaplus/releases/download/v{TLC_VERSION}/tla2tools.jar"
+TLC_VERSION = "1.8.0"
+TLC_SHA256 = "066cd246d87a388dfde0f04c3b506007f4c0cb4708a5b5396f0552a005eb75b5"
 SPECS = Path(__file__).resolve().parent.parent / "specs"
+TLC_JAR = SPECS.parent / "tools" / f"tla2tools-{TLC_VERSION}.jar"
 
 
 class SpecCheckError(RuntimeError):
@@ -28,6 +27,7 @@ class SpecCheckError(RuntimeError):
 class ModelCase:
     name: str
     violation: str | None = None
+    module: str = "Workspace"
 
     def check_result(self, log: Path, status: int) -> None:
         """Require successful exploration or the exact expected witness violation."""
@@ -45,6 +45,8 @@ class ModelCase:
                 raise SpecCheckError(f"{self.name}: missing expected {self.violation}; {log}")
             if "State 1:" not in txt:
                 raise SpecCheckError(f"{self.name}: no counterexample trace; {log}")
+            if not (log.parent / "counterexample.json").is_file():
+                raise SpecCheckError(f"{self.name}: native JSON trace is missing; {log}")
         print(f"{self.name}: passed ({log})")
         for line in txt.splitlines():
             if "states generated" in line or "distinct states found" in line:
@@ -52,10 +54,41 @@ class ModelCase:
 
 
 CASES = (
+    ModelCase(name="PublicationRecovery", module="PublicationRecovery"),
+    ModelCase(
+        name="PublicationWrongValidation",
+        module="PublicationRecovery",
+        violation="ValidateBoundToId",
+    ),
+    ModelCase(
+        name="PublicationPrematureGC", module="PublicationRecovery", violation="AckedRecoverable"
+    ),
+    ModelCase(name="FencedPublish", module="FencedPublish"),
+    ModelCase(name="FencedPublishExpiry", module="FencedPublish"),
+    ModelCase(name="FencedPublishInduction", module="FencedPublishInduction"),
+    ModelCase(name="FencedPublishInductionTwoWriters", module="FencedPublishInduction"),
+    ModelCase(name="MissingFence", module="FencedPublish", violation="PublishedWithAuthority"),
+    ModelCase(name="WholeLeaf", module="FencedPublish", violation="UnmodifiedPathsPreserved"),
+    ModelCase(name="StaleBaseWitness", module="FencedPublish", violation="NeverAcceptsStaleBase"),
+    ModelCase(name="EpochLogReplayDiscard", module="EpochLogReplay", violation="ReplayIncomplete"),
+    ModelCase(name="EpochLogReplayCommit", module="EpochLogReplay", violation="ReplayIncomplete"),
     ModelCase(name="Workspace"),
     ModelCase(name="StaleBase", violation="NoStaleBaseCommit"),
     ModelCase(name="StaleToken", violation="NoStaleTokenRejection"),
     ModelCase(name="BrokenFence", violation="AcceptedAuthority"),
+    # Core: the protocol under Workspace and EpochLog. Reachable check, then the
+    # finite invariant-seeded checks on the two cheap instances.
+    ModelCase(name="Core", module="Core"),
+    ModelCase(name="CoreInductive1", module="Core"),
+    ModelCase(name="CoreInductive2", module="Core"),
+    # EpochLog: fencing tokens over an explicit log. Tiny reachable model plus the
+    # witness that a stale-base proposal commits without a merge.
+    ModelCase(name="EpochLogTiny", module="EpochLog"),
+    ModelCase(name="EpochLogPending", module="EpochLog"),
+    ModelCase(name="EpochLogWitness", violation="NoStaleBaseCommit", module="EpochLog"),
+    # CowTree: the first formulation; smoke plus one induction instance.
+    ModelCase(name="CowTreeSmoke", module="CowTree"),
+    ModelCase(name="CowTreeInductive2", module="CowTree"),
 )
 
 
@@ -70,16 +103,21 @@ class Checker:
         ret = self.cache / f"tla2tools-{TLC_VERSION}.jar"
         return ret
 
-    def fetch(self) -> None:
-        """Fetch the release from upstream, rejecting bytes that differ from the pin."""
+    def prepare(self) -> None:
+        """Verify the vendored checker before populating or using its execution cache."""
+        buf = TLC_JAR.read_bytes()
+        if hashlib.sha256(buf).hexdigest() != TLC_SHA256:
+            raise SpecCheckError(f"vendored tla2tools.jar failed SHA-256 validation: {TLC_JAR}")
         self.cache.mkdir(parents=True, exist_ok=True)
         if not self.jar.exists():
-            # The download URL is a fixed HTTPS upstream release, never user input.
-            with urllib.request.urlopen(TLC_URL, timeout=60) as src:  # noqa: S310
-                buf = src.read()
-            if hashlib.sha256(buf).hexdigest() != TLC_SHA256:
-                raise SpecCheckError("upstream tla2tools.jar does not match the pinned SHA-256")
-            self.jar.write_bytes(buf)
+            with tempfile.NamedTemporaryFile(dir=self.cache, delete=False) as stream:
+                temporary = Path(stream.name)
+                try:
+                    stream.write(buf)
+                    stream.flush()
+                    os.replace(temporary, self.jar)
+                finally:
+                    temporary.unlink(missing_ok=True)
         if hashlib.sha256(self.jar.read_bytes()).hexdigest() != TLC_SHA256:
             raise SpecCheckError(f"cached tla2tools.jar failed SHA-256 validation: {self.jar}")
         os.environ["TLA2TOOLS_JAR"] = str(self.jar)
@@ -88,12 +126,18 @@ class Checker:
         """Retain each command, identity, complete log, and expected counterexample."""
         out = Path(tempfile.mkdtemp(prefix=f"{case.name}-", dir=self.cache))
         cfg = SPECS / f"{case.name}.cfg"
-        model = SPECS / "Workspace.tla"
+        model = SPECS / f"{case.module}.tla"
         shutil.copy2(cfg, out / cfg.name)
-        shutil.copy2(model, out / model.name)
+        dependencies = [model]
+        if case.module == "FencedPublishInduction":
+            dependencies.append(SPECS / "FencedPublish.tla")
+        if case.module == "EpochLogReplay":
+            dependencies.append(SPECS / "EpochLog.tla")
+        for dependency in dependencies:
+            shutil.copy2(dependency, out / dependency.name)
         cmd = [
             self.java,
-            "-Xmx512m",
+            "-Xmx1g",
             "-XX:+UseParallelGC",
             "-cp",
             str(self.jar),
@@ -104,6 +148,10 @@ class Checker:
             "0",
             "-coverage",
             "1",
+            "-noGenerateSpecTE",
+            "-dumpTrace",
+            "json",
+            "counterexample.json",
             "-config",
             cfg.name,
             model.name,
@@ -112,7 +160,7 @@ class Checker:
         with log.open("w") as dst:
             dst.write(f"command: {cmd!r}\njar SHA-256: {TLC_SHA256}\n")
             dst.write((self.cache / "java-version.txt").read_text())
-            for src in (model, cfg):
+            for src in (*dependencies, cfg):
                 dst.write(f"{src.name} SHA-256: {hashlib.sha256(src.read_bytes()).hexdigest()}\n")
             dst.flush()
             try:
@@ -153,7 +201,7 @@ def main() -> None:
     )
     if checker.cache.is_relative_to(SPECS.parent):
         parser.error("--cache must be outside the checkout")
-    checker.fetch()
+    checker.prepare()
     # The release supports Java 8/11; use Java 11+ for this reproducible command.
     res = subprocess.run(  # noqa: S603
         [checker.java, "-version"],
