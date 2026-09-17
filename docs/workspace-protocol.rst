@@ -287,6 +287,39 @@ acknowledgment protocol. Merging version vectors later does not establish the
 single-tip contract. Atomic cross-workspace moves similarly require a separate
 transaction and recovery design. Neither extension is proved by this model.
 
+Batched publication review
+--------------------------
+
+The additional `FencedPublish model <../specs/FencedPublish.rst>`_ checks a
+different boundary from ``Workspace.tla``. A proposal captures its origins and
+tokens before submission. Reacquiring a path changes the current generation
+without changing a previously captured proposal token. Publication compares
+the captured token, owner and origin with the current authority.
+
+The model admits a batch only when every proposal has current authority and
+the write sets are pairwise disjoint. It overlays those deltas on the current
+tip, preserving paths outside the batch. It supports one pending proposal per
+writer. This does not establish disjointness for an implementation with several
+overlapping queued proposals from the same holder.
+
+Its stale-base witness requires an actual value change while another writer's
+disjoint path has changed since the proposal's base. This avoids demonstrating
+progress only through a no-op or unchanged snapshot. The missing-fence and
+whole-leaf mutation configurations must produce named counterexamples.
+
+Two configurations check finite induction by starting from every state that
+satisfies the candidate invariant and permitting exactly one transition. The
+one-writer case checks 14,400 initial invariant states. The two-writer case
+checks 811,008. Each completes with no invariant violation under its listed
+bounds. These counts are distinct initial states, not proof for arbitrary
+writer counts or histories. The `reproduction guide <../specs/FencedPublish.rst>`_
+names the exact domains, tool artifact and expected results.
+
+This model omits reservation activation, mutable leaf views and drop. Neither
+model is a refinement of the other. Both abstract successful publication as
+atomic and leave persistence, exact-candidate validation, acknowledgement loss,
+request replay and POSIX namespace behavior to further implementation checks.
+
 Related work
 ------------
 
