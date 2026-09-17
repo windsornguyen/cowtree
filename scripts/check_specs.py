@@ -11,13 +11,12 @@ import re
 import shutil
 import subprocess
 import tempfile
-import urllib.request
 
 
 TLC_VERSION = "1.8.0"
 TLC_SHA256 = "066cd246d87a388dfde0f04c3b506007f4c0cb4708a5b5396f0552a005eb75b5"
-TLC_URL = f"https://github.com/tlaplus/tlaplus/releases/download/v{TLC_VERSION}/tla2tools.jar"
 SPECS = Path(__file__).resolve().parent.parent / "specs"
+TLC_JAR = SPECS.parent / "tools" / f"tla2tools-{TLC_VERSION}.jar"
 
 
 class SpecCheckError(RuntimeError):
@@ -104,16 +103,21 @@ class Checker:
         ret = self.cache / f"tla2tools-{TLC_VERSION}.jar"
         return ret
 
-    def fetch(self) -> None:
-        """Fetch the release from upstream, rejecting bytes that differ from the pin."""
+    def prepare(self) -> None:
+        """Verify the vendored checker before populating or using its execution cache."""
+        buf = TLC_JAR.read_bytes()
+        if hashlib.sha256(buf).hexdigest() != TLC_SHA256:
+            raise SpecCheckError(f"vendored tla2tools.jar failed SHA-256 validation: {TLC_JAR}")
         self.cache.mkdir(parents=True, exist_ok=True)
         if not self.jar.exists():
-            # The download URL is a fixed HTTPS upstream release, never user input.
-            with urllib.request.urlopen(TLC_URL, timeout=60) as src:  # noqa: S310
-                buf = src.read()
-            if hashlib.sha256(buf).hexdigest() != TLC_SHA256:
-                raise SpecCheckError("upstream tla2tools.jar does not match the pinned SHA-256")
-            self.jar.write_bytes(buf)
+            with tempfile.NamedTemporaryFile(dir=self.cache, delete=False) as stream:
+                temporary = Path(stream.name)
+                try:
+                    stream.write(buf)
+                    stream.flush()
+                    os.replace(temporary, self.jar)
+                finally:
+                    temporary.unlink(missing_ok=True)
         if hashlib.sha256(self.jar.read_bytes()).hexdigest() != TLC_SHA256:
             raise SpecCheckError(f"cached tla2tools.jar failed SHA-256 validation: {self.jar}")
         os.environ["TLA2TOOLS_JAR"] = str(self.jar)
@@ -197,7 +201,7 @@ def main() -> None:
     )
     if checker.cache.is_relative_to(SPECS.parent):
         parser.error("--cache must be outside the checkout")
-    checker.fetch()
+    checker.prepare()
     # The release supports Java 8/11; use Java 11+ for this reproducible command.
     res = subprocess.run(  # noqa: S603
         [checker.java, "-version"],

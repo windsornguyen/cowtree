@@ -48,15 +48,24 @@ logs and native JSON counterexamples. Missing expected violations, parse errors,
 timeouts and wrong exit codes fail the run. Witness searches intentionally stop
 at the exact named invariant violation and are not complete safety explorations.
 
-The official release asset currently has SHA-256::
+The vendored upstream checker in ``tools/tla2tools-1.8.0.jar`` has SHA-256::
 
     066cd246d87a388dfde0f04c3b506007f4c0cb4708a5b5396f0552a005eb75b5
 
-This matches GitHub release asset 569238611 (4,492,834 bytes, updated
-2026-09-17 UTC). The previous FencedPublish receipt used different bytes,
-``20322939...``. The historical Core/EpochLog receipts used release 1.7.4.
-Their results retain those original identities. The current runner rejects
-changed downloads and reruns every selected model with the new pin.
+The runner verifies the vendored file before populating or using its cache,
+then verifies the cached executable too. It never downloads a substitute.
+The JAR is unchanged from the 24-case qualification and retained trace exports.
+Its embedded source revision is ``078405c22df8037571860457b2d078e8281bd851``.
+
+Upstream's ``v1.8.0`` tag tracks master builds. The tested asset 569238611
+(4,492,834 bytes) was deleted and replaced by asset 569359548 (4,492,966 bytes,
+SHA-256 ``9d36716f...``) before hosted CI ran. Both the download URL and asset
+API returned the replacement; the original checksum check correctly failed.
+Vendoring the previously verified build makes checker retrieval reproducible
+offline. See `tool provenance and licenses <../tools/README.md>`_.
+
+The earlier FencedPublish receipt used ``20322939...``; historical Core/EpochLog
+receipts used release 1.7.4. Those results retain their original identities.
 
 Replay
 ------
