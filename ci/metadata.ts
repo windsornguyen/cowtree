@@ -1,11 +1,11 @@
-import { defineMatrix, format, job, workflow } from "@dedalus-labs/hollywood";
-import { checkout, run } from "./steps.ts";
+import { defineMatrix, expr, format, job, workflow } from "@dedalus-labs/hollywood";
+import { checkout, run, uv } from "./steps.ts";
 
 const platforms = defineMatrix({ os: ["ubuntu-24.04", "macos-latest"] });
 export const metadata = workflow(
   {
     name: "SQLite metadata",
-    on: { push: { branches: ["main"] }, pull_request: { branches: ["main"] } },
+    on: { push: { branches: ["main"] }, pull_request: {} },
     permissions: { contents: "read" },
     jobs: {
       metadata: job({
@@ -46,6 +46,16 @@ export const metadata = workflow(
             "--all-targets",
             "--all-features",
           ]),
+          run("Build production metadata interface", "cargo", [
+            "+1.97.1", "build", "--locked", "-p", "cowtree-metadata",
+          ]),
+          uv,
+          run("Install Python integration dependencies", "uv", ["sync", "--locked", "--group", "test"]),
+          run("Test Python metadata integration", "uv", ["run", "--no-sync", "pytest", "-q", "integration"]),
+          {
+            ...run("Test APFS workspace integration", "uv", ["run", "--no-sync", "pytest", "-q", "mounted"]),
+            if: expr<boolean>("runner.os == 'macOS'"),
+          },
           {
             ...run("Run production example with test hooks disabled", "cargo", [
               "+1.97.1",

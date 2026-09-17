@@ -11,6 +11,34 @@ use crate::objects::ObjectStore;
 use crate::{Entry, EntryKind, Error, Grant, LeafId, LeafView, ResourcePath, Result, Store, Token};
 
 impl Store {
+    /// Read the live reservation table from one consistent metadata snapshot.
+    pub fn grants(&self) -> Result<Vec<Grant>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT path,leaf,token,origin,activated FROM leases ORDER BY path")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, bool>(4)?,
+            ))
+        })?;
+        let mut grants = Vec::new();
+        for row in rows {
+            let (path, leaf, token, origin, activated) = row?;
+            grants.push(Grant {
+                path: ResourcePath::parse(path)?,
+                leaf: LeafId::from_sql(leaf)?,
+                token: Token::from_sql(token)?,
+                origin: parse_entry(&origin)?,
+                activated,
+            });
+        }
+        Ok(grants)
+    }
+
     /// Reserve every requested path, or leave all reservations unchanged.
     pub fn acquire(&mut self, leaf: LeafId, paths: &BTreeSet<ResourcePath>) -> Result<Vec<Grant>> {
         self.capacity()?;

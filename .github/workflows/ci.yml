@@ -5,9 +5,7 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+  pull_request: {}
 permissions:
   contents: read
 jobs:
@@ -131,5 +129,6 @@ jobs:
           path: |-
             ${{ runner.temp }}/cowtree-tla/java-version.txt
             ${{ runner.temp }}/cowtree-tla/*/tlc.log
+            ${{ runner.temp }}/cowtree-tla/*/counterexample.json
             ${{ runner.temp }}/cowtree-tla/*/*.tla
             ${{ runner.temp }}/cowtree-tla/*/*.cfg

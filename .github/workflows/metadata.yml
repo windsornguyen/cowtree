@@ -5,9 +5,7 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
+  pull_request: {}
 permissions:
   contents: read
 jobs:
@@ -34,6 +32,23 @@ jobs:
         shell: bash
       - name: Test crashes and concurrent publication
         run: cargo +1.97.1 test --locked --workspace --all-targets --all-features
+        shell: bash
+      - name: Build production metadata interface
+        run: cargo +1.97.1 build --locked -p cowtree-metadata
+        shell: bash
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install Python integration dependencies
+        run: uv sync --locked --group test
+        shell: bash
+      - name: Test Python metadata integration
+        run: uv run --no-sync pytest -q integration
+        shell: bash
+      - name: Test APFS workspace integration
+        run: uv run --no-sync pytest -q mounted
+        if: ${{ runner.os == 'macOS' }}
         shell: bash
       - name: Run production example with test hooks disabled
         run: cargo +1.97.1 run --locked -p cowtree-metadata --example publish

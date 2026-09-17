@@ -12,7 +12,7 @@ const setupUv = { uses: uv.uses } as const;
 export const ci = workflow(
   {
     name: "CI",
-    on: { push: { branches: ["main"] }, pull_request: { branches: ["main"] } },
+    on: { push: { branches: ["main"] }, pull_request: {} },
     permissions: { contents: "read" },
     jobs: {
       workflows: job({
@@ -101,7 +101,7 @@ export const ci = workflow(
             with: {
               name: "workspace-protocol-evidence",
               "if-no-files-found": "error",
-              path: ["java-version.txt", "*/tlc.log", "*/*.tla", "*/*.cfg"]
+              path: ["java-version.txt", "*/tlc.log", "*/counterexample.json", "*/*.tla", "*/*.cfg"]
                 .map((path) => `\u0024{{ runner.temp }}/cowtree-tla/${path}`)
                 .join("\n"),
             },
