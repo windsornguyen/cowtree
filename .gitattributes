@@ -2,3 +2,7 @@
 .github/actions/ci/** linguist-generated=true
 # Keep compiled bundles out of textual diffs and preserve vendored string literals.
 .github/actions/ci/*/dist/index.js -diff -whitespace
+
+# Keep the pinned upstream checker byte-identical and out of textual diffs.
+tools/*.jar -diff -text linguist-generated=true linguist-vendored=true
+tools/licenses/** -whitespace linguist-vendored=true

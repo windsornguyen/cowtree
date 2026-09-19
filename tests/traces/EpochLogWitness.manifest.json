@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "checker_version": "1.8.0",
+  "checker_sha256": "066cd246d87a388dfde0f04c3b506007f4c0cb4708a5b5396f0552a005eb75b5",
+  "inputs": {
+    "specs/EpochLog.tla": "c004fa60a2352a9d816aad690620f192b7f0c40e4799d2da9b2e9b2973068098",
+    "specs/EpochLogWitness.cfg": "69eeaf7083b8365ade4c2302721a9855d8fb8507e10b646f7d0652919dc4df95"
+  },
+  "export_sha256": "0f57b100abd81359794c24cc5e579d23b30dbbebee144fbc37f381c086ef5aeb",
+  "actions": [
+    {
+      "action": "fork",
+      "leaf": "l1"
+    },
+    {
+      "action": "fork",
+      "leaf": "l2"
+    },
+    {
+      "action": "acquire",
+      "leaf": "l1",
+      "path": "p1"
+    },
+    {
+      "action": "acquire",
+      "leaf": "l2",
+      "path": "p2"
+    },
+    {
+      "action": "write",
+      "leaf": "l1",
+      "path": "p1"
+    },
+    {
+      "action": "propose",
+      "leaf": "l1"
+    },
+    {
+      "action": "write",
+      "leaf": "l2",
+      "path": "p2"
+    },
+    {
+      "action": "propose",
+      "leaf": "l2"
+    },
+    {
+      "action": "commit",
+      "leaf": "l1"
+    },
+    {
+      "action": "commit",
+      "leaf": "l2"
+    }
+  ]
+}

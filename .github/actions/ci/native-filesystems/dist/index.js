@@ -21607,6 +21607,8 @@ async function checkFilesystems(exec2, path6) {
   if (!path6) throw new Error("PATH is required for the native filesystem checks");
   await exec2("sudo", ["apt-get", "update"]);
   await exec2("sudo", ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"]);
+  await exec2("rustup", ["toolchain", "install", "1.97.1", "--profile", "minimal"]);
+  await exec2("cargo", ["+1.97.1", "build", "--locked", "-p", "cowtree-metadata"]);
   await exec2("sudo", ["env", `PATH=${path6}`, "bash", "scripts/fs_matrix.sh"]);
 }
 var nativeFilesystems = action({

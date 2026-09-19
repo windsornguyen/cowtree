@@ -12,6 +12,7 @@ CREATE TABLE uploads(leaf INTEGER NOT NULL REFERENCES leaves(id), object TEXT NO
 CREATE TABLE proposals(leaf INTEGER NOT NULL, sequence INTEGER NOT NULL, input_hash TEXT NOT NULL,
  body TEXT, state TEXT NOT NULL CHECK(state IN ('pending','committed','aborted')),
  captured_at INTEGER NOT NULL, attempt INTEGER NOT NULL DEFAULT 0, parent INTEGER,
- root TEXT, ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN (0,1)), committed_version INTEGER,
+ root TEXT, ready INTEGER NOT NULL DEFAULT 0 CHECK(ready IN (0,1)), committed_version INTEGER, batch_id TEXT,
  PRIMARY KEY(leaf,sequence));
 CREATE TABLE retained(version INTEGER PRIMARY KEY REFERENCES epochs(version));
+CREATE TABLE client_pins(object TEXT PRIMARY KEY);

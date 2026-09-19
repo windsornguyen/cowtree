@@ -80,7 +80,7 @@ for filesystem in btrfs xfs-reflink xfs-no-reflink ext4; do
     mounted=1
     if (( expected )); then
         COWTREE_EXPECT_SUPPORTED=1 uv run --locked --no-default-groups --project "$repo" --group test \
-            pytest "$repo/tests" "$repo/src" --basetemp "$mountpoint/tests" -q
+            pytest "$repo/tests" "$repo/src" "$repo/mounted" --basetemp "$mountpoint/tests" -q
     else
         COWTREE_EXPECT_SUPPORTED=0 uv run --locked --no-default-groups --project "$repo" --group test \
             pytest "$repo/tests/test_engine.py" --basetemp "$mountpoint/tests" -q \

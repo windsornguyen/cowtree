@@ -12,6 +12,10 @@ from cowtree.types import CommandResult
 class CommandRunner:
     """Own subprocess execution without shell interpretation."""
 
+    def __init__(self, descriptors: tuple[int, ...] = ()) -> None:
+        """Keep explicitly owned locks alive until an operation's child exits."""
+        self.descriptors = descriptors
+
     def run(
         self,
         argv: list[str],
@@ -28,7 +32,12 @@ class CommandRunner:
 
         try:
             completed = subprocess.run(
-                args=argv, cwd=cwd, env=env, capture_output=True, check=False
+                args=argv,
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                check=False,
+                pass_fds=self.descriptors,
             )
         except ValueError as error:
             raise CowtreeError(

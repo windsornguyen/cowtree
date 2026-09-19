@@ -4,6 +4,8 @@ export async function checkFilesystems(exec: ScriptExec, path: string | undefine
   if (!path) throw new Error("PATH is required for the native filesystem checks");
   await exec("sudo", ["apt-get", "update"]);
   await exec("sudo", ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"]);
+  await exec("rustup", ["toolchain", "install", "1.97.1", "--profile", "minimal"]);
+  await exec("cargo", ["+1.97.1", "build", "--locked", "-p", "cowtree-metadata"]);
   await exec("sudo", ["env", `PATH=${path}`, "bash", "scripts/fs_matrix.sh"]);
 }
 
