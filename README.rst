@@ -96,6 +96,11 @@ existing directory and defaults to the current directory.
 Exit codes are ``0`` for success, ``1`` for an operation failure or unsupported
 doctor result, and ``2`` for invalid command syntax.
 
+``cowtree --version`` reports the installed package version. Add ``--json`` for
+``version`` and ``revision`` fields. The revision comes only from the installer's
+PEP 610 metadata. Wheels and editable installs without that metadata report null
+("unknown" in text), never the current repository's HEAD.
+
 Python API
 ----------
 
