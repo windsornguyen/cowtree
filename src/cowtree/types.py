@@ -11,6 +11,7 @@ from pathlib import Path
 from inline_tests import test
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
+from cowtree.submodule_types import PinnedSubmodule
 
 
 # --- Command inputs ---
@@ -106,6 +107,7 @@ class Checkout:
 
     commit: str
     files: tuple[TrackedFile, ...]
+    submodules: tuple[PinnedSubmodule, ...] = ()
 
 
 @dataclass(frozen=True)

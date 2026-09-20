@@ -21,3 +21,11 @@ The authoritative filesystem snapshot still records working-file bytes.
 
 Run ``uv run pytest tests/test_projection.py`` to check source selection, normal
 Git attribute conversion, index isolation, ref restrictions, and retries.
+Gitlink inspection
+------------------
+
+``GitRepository.snapshot`` rejects submodules by default. Explicitly selecting
+``SubmodulePolicy.MATERIALIZE_PINNED`` returns their paths and commit identities
+in ``Checkout.submodules`` alongside ordinary ``Checkout.files``. This records
+the parent tree without flattening or dropping its gitlinks. It does not fetch,
+initialize, or verify child checkouts. Managed admission owns those checks.
