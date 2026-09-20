@@ -1,5 +1,8 @@
 """Exercise structured output through the installed command boundary."""
 
+import errno
+import json
+import os
 from pathlib import Path
 
 from pydantic import TypeAdapter
@@ -69,3 +72,34 @@ def test_delimited_json_path_does_not_change_error_format(tmp_path: Path) -> Non
     res = run_cli(arguments=["doctor", "--", "--json"], cwd=tmp_path)
     assert res.returncode == 1
     assert res.stderr.startswith("cowtree: invalid_arguments:")
+
+
+def test_non_unicode_paths_round_trip_without_loss() -> None:
+    path = Path(os.fsdecode(b"/tmp/non-utf8-\xff"))
+    receipt = Success(kind=Command.ADD, value=Worktree(path=path))
+    wire = receipt.json()
+    assert wire.isascii()
+    assert TypeAdapter(Success).validate_python(json.loads(wire)) == receipt
+    failure = Failure(code=CowtreeErrorCode.INVALID_ARGUMENTS, message=str(path))
+    wire = failure.json()
+    assert wire.isascii()
+    assert TypeAdapter(Failure).validate_python(json.loads(wire)) == failure
+
+
+def test_native_json_add_preserves_filename_bytes(
+    cow_repository: Repository, tmp_path: Path
+) -> None:
+    target = tmp_path / os.fsdecode(b"target-\xff")
+    try:
+        target.mkdir()
+    except OSError as error:
+        if error.errno == errno.EILSEQ:
+            pytest.skip("filesystem rejects non-UTF8 names")
+        raise
+    target.rmdir()
+    res = run_cli(arguments=["add", "--json", str(target)], cwd=cow_repository.path)
+    assert res.returncode == 0, res.stderr
+    created = TypeAdapter(Success).validate_python(json.loads(res.stdout))
+    assert isinstance(created.value, Worktree)
+    assert os.fsencode(created.value.path) == os.fsencode(target)
+    assert (target / "file.txt").read_bytes() == b"original\n"

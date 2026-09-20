@@ -1,9 +1,9 @@
 """Serialize standalone command receipts without changing human-readable defaults."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
+import os
 from typing import Literal
-
-from pydantic import TypeAdapter
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.types import Command, DoctorReport, Worktree
@@ -18,7 +18,7 @@ class Success:
     status: Literal["ok"] = "ok"
 
     def json(self) -> str:
-        result = TypeAdapter(Success).dump_json(self).decode()
+        result = json.dumps(asdict(self), default=os.fspath, ensure_ascii=True)
         return result
 
 
@@ -36,7 +36,7 @@ class Failure:
         return result
 
     def json(self) -> str:
-        result = TypeAdapter(Failure).dump_json(self).decode()
+        result = json.dumps(asdict(self), ensure_ascii=True)
         return result
 
 
