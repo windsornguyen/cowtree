@@ -2,12 +2,14 @@
 
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, distribution
+from pathlib import Path
 from typing import Protocol
 
 from inline_tests import test
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
+from cowtree.exec import CommandRunner
 
 
 class Package(Protocol):
@@ -63,6 +65,40 @@ class VersionInfo(BaseModel):
                 CowtreeErrorCode.COMMAND_FAILED, "cowtree package metadata missing; install cowtree"
             ) from error
         result = cls.read(io=package)
+        return result
+
+
+class BackendInfo(VersionInfo):
+    """Identify the configured executable separately from the installed CLI."""
+
+    path: Path
+
+
+class WorkspaceVersions(BaseModel):
+    """A read-only version query never starts the metadata service or opens its store."""
+
+    cli: VersionInfo
+    backend: BackendInfo
+
+    @classmethod
+    def read(cls, io: CommandRunner, binary: Path) -> "WorkspaceVersions":
+        # Two arguments make older binaries reject usage instead of opening a '--version' store.
+        res = io.run(argv=[str(binary), "--version", "--json"])
+        try:
+            version = VersionInfo.model_validate_json(res.stdout)
+        except ValidationError as error:
+            raise CowtreeError(
+                CowtreeErrorCode.COMMAND_FAILED,
+                "metadata executable returned invalid build identity",
+            ) from error
+        result = cls(
+            cli=VersionInfo.installed(),
+            backend=BackendInfo(
+                path=binary,
+                version=version.version,
+                revision=version.revision,
+            ),
+        )
         return result
 
 
