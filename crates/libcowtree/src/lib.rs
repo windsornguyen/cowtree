@@ -34,6 +34,6 @@ pub use tree_clone::{clone_tree, populate_tree};
 pub use tree_entry::{FileIdentity, TreeEntry, TreeKind};
 pub use tree_policy::{CaptureMode, Hardlinks, PathClass, TreePolicy};
 pub use tree_scan::scan_tree;
-pub use worktree::{AddRequest, Branch, Lock, SourceMode, Worktree};
-pub use worktree_error::{WorktreeError, WorktreeResult};
+pub use worktree::{AddRequest, Branch, Lock, RequestIssue, SourceMode, Worktree};
+pub use worktree_error::{GitField, ProbeInvariant, WorktreeError, WorktreeResult};
 pub use worktree_ops::{list_worktrees, remove_worktree};

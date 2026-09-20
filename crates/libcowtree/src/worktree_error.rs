@@ -12,8 +12,8 @@ pub enum WorktreeError {
     Git { status: ExitStatus, stderr: String },
     #[error("filesystem operation failed at {path}: {source}")]
     Io { path: PathBuf, source: io::Error },
-    #[error("invalid Git response for {field}")]
-    GitResponse { field: &'static str },
+    #[error("invalid Git response for {field:?}")]
+    GitResponse { field: GitField },
     #[error("source has tracked changes or hidden index flags")]
     DirtySource,
     #[error("source HEAD changed or does not match the requested commit")]
@@ -26,8 +26,14 @@ pub enum WorktreeError {
     UnsupportedMode { path: PathBuf },
     #[error("destination already exists: {path}")]
     DestinationExists { path: PathBuf },
+    #[error("branch already exists: {name:?}")]
+    BranchExists { name: std::ffi::OsString },
+    #[error("branch does not exist: {name:?}")]
+    BranchMissing { name: std::ffi::OsString },
     #[error("invalid request: {reason}")]
-    InvalidRequest { reason: &'static str },
+    InvalidRequest { reason: crate::RequestIssue },
+    #[error("clone probe violated {invariant:?}")]
+    ProbeFailed { invariant: ProbeInvariant },
     #[error("created worktree is not registered: {path}")]
     WorktreeMissing { path: PathBuf },
     #[error("private seed cleanup failed at {path}. Destination may already be complete: {source}")]
@@ -38,6 +44,27 @@ pub enum WorktreeError {
         "cleanup failed at {path}, branch {branch:?}: {cleanup} (original failure: {original})"
     )]
     Cleanup { path: PathBuf, branch: crate::Branch, original: Box<Self>, cleanup: Box<Self> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitField {
+    Text,
+    PathEncoding,
+    TreeEntry,
+    TreeMode,
+    WorktreeKey,
+    WorktreePath,
+    WorktreeTerminator,
+    Head,
+    Branch,
+    LockReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbeInvariant {
+    ClonedContents,
+    SourceIsolation,
+    TargetIsolation,
 }
 
 impl WorktreeError {
@@ -54,7 +81,10 @@ impl WorktreeError {
             Self::SparseCheckout => "sparse_checkout",
             Self::Submodule { .. } => "submodule_unsupported",
             Self::UnsupportedMode { .. } => "unsupported_mode",
-            Self::DestinationExists { .. } | Self::InvalidRequest { .. } => "invalid_arguments",
+            Self::DestinationExists { .. }
+            | Self::InvalidRequest { .. }
+            | Self::BranchExists { .. }
+            | Self::BranchMissing { .. } => "invalid_arguments",
             Self::WorktreeMissing { .. } => "worktree_not_found",
             Self::Cleanup { .. }
             | Self::SeedCleanup { .. }
