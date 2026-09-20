@@ -3,6 +3,7 @@
 import ctypes
 import os
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -37,8 +38,9 @@ def test_ntfs_rejects_without_destination() -> None:
     assert not target.exists()
 
 
+@pytest.mark.parametrize("failure", ["error", "interrupt"])
 def test_failed_extents_remove_only_the_owned_target(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Literal["error", "interrupt"]
 ) -> None:
     source, target = tmp_path / "source", tmp_path / "target"
     source.write_bytes(b"keep source")
@@ -52,11 +54,14 @@ def test_failed_extents_remove_only_the_owned_target(
         output: ctypes.Structure | None = None,
     ) -> None:
         if code is Control.DUPLICATE_EXTENTS:
+            if failure == "interrupt":
+                raise KeyboardInterrupt("injected extent failure")
             raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "injected extent failure")
         original(self, handle=handle, code=code, data=data, output=output)
 
     monkeypatch.setattr(Kernel, "control", fail)
-    with pytest.raises(CowtreeError, match="injected extent failure"):
+    expected = KeyboardInterrupt if failure == "interrupt" else CowtreeError
+    with pytest.raises(expected, match="injected extent failure"):
         clone_regular_file(source=source, target=target)
     assert source.read_bytes() == b"keep source"
     assert not target.exists()
@@ -65,3 +70,19 @@ def test_failed_extents_remove_only_the_owned_target(
         clone_regular_file(source=source, target=target)
     assert err.value.code is CowtreeErrorCode.INVALID_ARGUMENTS
     assert target.read_bytes() == b"keep destination"
+
+
+def test_cross_volume_clone_preserves_both_locations(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.write_bytes(b"source volume")
+    destination = Path(os.environ["COWTREE_NTFS_TEST"]) / "cross-volume"
+    destination.mkdir(parents=True)
+    target = destination / "target"
+    with pytest.raises(CowtreeError) as err:
+        clone_regular_file(source=source, target=target)
+    assert err.value.code in (
+        CowtreeErrorCode.DIFFERENT_FILESYSTEM,
+        CowtreeErrorCode.COW_UNAVAILABLE,
+    )
+    assert not target.exists()
+    assert source.read_bytes() == b"source volume"

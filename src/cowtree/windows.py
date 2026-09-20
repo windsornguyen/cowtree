@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+from typing import NoReturn
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 
@@ -32,6 +33,8 @@ class Control(IntEnum):
 
 
 class Extents(ctypes.Structure):
+    """Source handle and cluster-aligned byte ranges from DUPLICATE_EXTENTS_DATA."""
+
     _fields_ = [
         ("source", wintypes.HANDLE),
         ("source_offset", ctypes.c_int64),
@@ -41,6 +44,8 @@ class Extents(ctypes.Structure):
 
 
 class Integrity(ctypes.Structure):
+    """The checksum settings and allocation sizes returned by the filesystem."""
+
     _fields_ = [
         ("algorithm", wintypes.WORD),
         ("reserved", wintypes.WORD),
@@ -51,6 +56,8 @@ class Integrity(ctypes.Structure):
 
 
 class IntegritySetting(ctypes.Structure):
+    """Checksum settings applied before allocating the destination's extents."""
+
     _fields_ = [
         ("algorithm", wintypes.WORD),
         ("reserved", wintypes.WORD),
@@ -105,7 +112,7 @@ class Kernel:
         ]
         self.dll.DeviceIoControl.restype = wintypes.BOOL
 
-    def failure(self, operation: str) -> None:
+    def failure(self, operation: str) -> NoReturn:
         if sys.platform != "win32":
             raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, "Windows backend requires Windows")
         code = ctypes.get_last_error()
