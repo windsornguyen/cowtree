@@ -11,6 +11,7 @@ import sys
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
 from cowtree.locks import exclusive
+from cowtree.submodule_types import PinnedSubmodule, SubmodulePolicy
 from cowtree.types import Checkout, CommandResult, FileMode, TrackedFile, Worktree
 
 
@@ -86,7 +87,7 @@ class GitRepository:
         with path.open("a+b") as lock, exclusive(descriptor=lock.fileno()):
             yield lock.fileno()
 
-    def snapshot(self) -> Checkout:
+    def snapshot(self, *, submodules: SubmodulePolicy = SubmodulePolicy.REJECT) -> Checkout:
         """Pin a complete, clean source checkout and its tracked manifest."""
         configured = self.run(args=["config", "--bool", "core.sparseCheckout"], check=False)
         if configured.returncode not in (0, 1):
@@ -97,7 +98,7 @@ class GitRepository:
             )
         commit = self.head()
         data = self.capture(args=["ls-tree", "-r", "-z", commit])
-        files = parse_tracked_files(data=data)
+        tree = parse_tree(data=data, submodules=submodules)
         flags = self.capture(args=["ls-files", "-v", "-z"])
         for record in flags.split("\0"):
             if not record:
@@ -114,7 +115,7 @@ class GitRepository:
             raise CowtreeError(
                 code=CowtreeErrorCode.DIRTY_SOURCE, message="source has tracked changes"
             )
-        checkout = Checkout(commit=commit, files=files)
+        checkout = Checkout(commit=commit, files=tree.files, submodules=tree.submodules)
         return checkout
 
     def worktrees(self) -> list[Worktree]:
@@ -161,16 +162,42 @@ def resolve_path(path: Path) -> Path:
 
 def parse_tracked_files(data: str) -> tuple[TrackedFile, ...]:
     """Decode a Git tree into supported file modes and byte-preserving paths."""
+    files = parse_tree(data=data, submodules=SubmodulePolicy.REJECT).files
+    return files
+
+
+@dataclass(frozen=True)
+class GitTree:
+    files: tuple[TrackedFile, ...]
+    submodules: tuple[PinnedSubmodule, ...]
+
+
+def parse_tree(data: str, submodules: SubmodulePolicy) -> GitTree:
+    """Preserve gitlinks only when the caller explicitly selects pinned materialization."""
+    if not isinstance(submodules, SubmodulePolicy):
+        raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "invalid submodule policy")
     files: list[TrackedFile] = []
+    pins: list[PinnedSubmodule] = []
     for record in data.split("\0"):
         if not record:
             continue
         metadata, path = record.split("\t", 1)
-        mode = metadata.split()[0]
+        mode, _, commit = metadata.split()
         if mode == "160000":
-            raise CowtreeError(
-                CowtreeErrorCode.SUBMODULE_UNSUPPORTED, f"submodules are unsupported: {path}"
-            )
+            match submodules:
+                case SubmodulePolicy.REJECT:
+                    raise CowtreeError(
+                        CowtreeErrorCode.SUBMODULE_UNSUPPORTED,
+                        f"submodules are unsupported: {path}",
+                    )
+                case SubmodulePolicy.MATERIALIZE_PINNED:
+                    pass
+                case _:
+                    raise CowtreeError(
+                        CowtreeErrorCode.INVALID_ARGUMENTS, "invalid submodule policy"
+                    )
+            pins.append(PinnedSubmodule(path=path, commit=commit))
+            continue
         try:
             file_mode = FileMode(mode)
         except ValueError as error:
@@ -179,7 +206,7 @@ def parse_tracked_files(data: str) -> tuple[TrackedFile, ...]:
                 message=f"unsupported tracked mode {mode}: {path}",
             ) from error
         files.append(TrackedFile(mode=file_mode, path=path))
-    manifest = tuple(files)
+    manifest = GitTree(files=tuple(files), submodules=tuple(pins))
     return manifest
 
 
