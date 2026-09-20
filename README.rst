@@ -5,6 +5,11 @@ cowtree
 of tracked files. Cloned regular files initially share storage; writing to one
 does not modify the other.
 
+For Apple-silicon Macs, the `local binary bundle <docs/install.rst>`_ includes
+the CLI, Python runtime, and Rust metadata executable. Start with the
+`Cargo quickstart <docs/cargo-workspaces.rst#first-workspace>`_ to inherit a built
+target directory and keep compiling in one private leaf.
+
 Managed workspaces
 ------------------
 
@@ -20,6 +25,8 @@ a runnable workflow. The original tracked-file commands below remain supported.
 round trips. `Cargo qualification <docs/cargo-workspaces.rst>`_ exercises real
 compiled caches and explicit derived hard-link handling. The
 `BSMR boundary <docs/bsmr-workspaces.rst>`_ keeps action-cache authority with BSMR.
+The `performance report <docs/performance.rst>`_ separates import, fresh forks,
+prepared-leaf lookup, and compiler reuse, with scripts to reproduce each result.
 
 `Build-cache measurements <docs/warm-cache.rst>`_ demonstrate actual compiler
 reuse and report total creation cost. `Lifecycle qualification
