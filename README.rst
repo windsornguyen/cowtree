@@ -51,6 +51,13 @@ request that behavior explicitly; ``-b`` creates a new branch instead.
 commit. ``--lock`` retains Git's worktree lock. ``--reason`` requires ``--lock``;
 an omitted reason remains ``None`` in the returned metadata.
 
+Use ``add --branch EXISTING_BRANCH PATH`` to attach an unused local branch
+instead of creating one. It is mutually exclusive with ``-b`` and ``--detach``.
+The branch must name the source commit; Git rejects a branch already checked out
+elsewhere. The Python equivalent is ``WorktreeAddRequest(existing_branch=...)``.
+Neither failed creation nor removal deletes an existing branch. Index creation
+never resets its reference, including when an external writer moves it.
+
 Cowtree always populates tracked files through CoW and prepares a clean index.
 There is no pass-through for arbitrary Git arguments. ``-B``, ``--force`` on
 ``add``, ``--orphan``, ``--cow``, ``--no-checkout``, tracking options, and
