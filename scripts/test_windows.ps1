@@ -25,7 +25,8 @@ try {
     }
     if ((Get-Volume -DriveLetter R).FileSystem -ne "ReFS") { throw "ReFS was not mounted" }
     $env:COWTREE_NTFS_TEST = Join-Path $env:RUNNER_TEMP "cowtree-ntfs"
-    uv run --no-sync pytest -q windows --basetemp R:\cowtree-tests
+    $env:COWTREE_EXPECT_SUPPORTED = "1"
+    uv run --no-sync pytest -q windows tests/test_git_extension.py --basetemp R:\cowtree-tests
     if ($LASTEXITCODE -ne 0) { throw "Native Windows checks failed" }
     uv run --no-sync cowtree doctor R:\
     if ($LASTEXITCODE -ne 0) { throw "Installed standalone CLI failed" }
