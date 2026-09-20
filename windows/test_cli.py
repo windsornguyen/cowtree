@@ -16,6 +16,10 @@ from cowtree.types import CommandResult, Worktree
 
 
 def arguments(command: list[str]) -> list[str]:
+    binary = os.environ.get("COWTREE_TEST_BINARY")
+    if binary is not None:
+        result = [binary, *command]
+        return result
     result = [
         sys.executable,
         "-c",
