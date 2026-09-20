@@ -22,6 +22,7 @@ from cowtree.submodule_types import SubmodulePolicy
 from cowtree.tree_types import PathPolicy
 from cowtree.views import Views
 from cowtree.workspace import Workspace
+from tests.test_cli import run_cli
 
 from .test_bootstrap import metadata_binary, source_repository
 
@@ -51,15 +52,25 @@ def test_pinned_materialization_retains_identity_without_shared_git_state(tmp_pa
         Workspace.create(root, source, metadata_binary(), PathPolicy())
     assert refused.value.code is CowtreeErrorCode.SUBMODULE_UNSUPPORTED
     assert not root.exists()
-    workspace = Workspace.create(
-        root,
-        source,
-        metadata_binary(),
-        PathPolicy(
-            derived=("cache",),
-            submodules=SubmodulePolicy.MATERIALIZE_PINNED,
-        ),
+    created = run_cli(
+        arguments=[
+            "workspace",
+            "--root",
+            str(root),
+            "init",
+            "--source",
+            str(source),
+            "--binary",
+            str(metadata_binary()),
+            "--derived",
+            "cache",
+            "--submodules",
+            "materialize-pinned",
+        ],
+        cwd=source,
     )
+    assert created.returncode == 0, created.stderr
+    workspace = Workspace.open(root)
     leaves = Leaves(workspace)
     first = leaves.fork(tmp_path / "first")
     sibling = leaves.fork(tmp_path / "sibling")
