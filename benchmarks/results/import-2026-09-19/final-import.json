@@ -1,0 +1,63 @@
+{
+  "trials": [
+    {
+      "elapsed_seconds": 0.7890977080096491,
+      "source_files": 128,
+      "verified_files": 384,
+      "operations": {
+        "init": 1,
+        "begin_import": 1,
+        "import_chunk": 2,
+        "finish_import": 1,
+        "tip": 1
+      },
+      "operation_seconds": {
+        "init": 0.04045458300970495,
+        "begin_import": 0.023301500012166798,
+        "import_chunk": 0.1456597500364296,
+        "finish_import": 0.032577916979789734,
+        "tip": 0.005575000017415732
+      }
+    },
+    {
+      "elapsed_seconds": 0.8169652500073425,
+      "source_files": 128,
+      "verified_files": 384,
+      "operations": {
+        "init": 1,
+        "begin_import": 1,
+        "import_chunk": 2,
+        "finish_import": 1,
+        "tip": 1
+      },
+      "operation_seconds": {
+        "init": 0.04708241601474583,
+        "begin_import": 0.019113582966383547,
+        "import_chunk": 0.12344283302081749,
+        "finish_import": 0.04055870801676065,
+        "tip": 0.005375458975322545
+      }
+    },
+    {
+      "elapsed_seconds": 0.8072212080005556,
+      "source_files": 128,
+      "verified_files": 384,
+      "operations": {
+        "init": 1,
+        "begin_import": 1,
+        "import_chunk": 2,
+        "finish_import": 1,
+        "tip": 1
+      },
+      "operation_seconds": {
+        "init": 0.05091866705333814,
+        "begin_import": 0.022624375007580966,
+        "import_chunk": 0.13303937506861985,
+        "finish_import": 0.039446165959816426,
+        "tip": 0.007188667019363493
+      }
+    }
+  ],
+  "median_seconds": 0.8072212080005556,
+  "binary_sha256": "52f8e8ab14fcbd1c87e32efce2b4182dd7cf3116284dbc8417ffaf52b5149051"
+}

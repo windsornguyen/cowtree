@@ -141,6 +141,8 @@ Every managed CLI command begins ``cowtree workspace --root STORE``.
      - Python owner and operation
    * - ``init``
      - ``cowtree.workspace.Workspace.create``; ``Workspace.open`` reopens a store.
+   * - ``import-status``
+     - ``Workspace.import_status`` returns the durable initial-import cursor.
    * - ``list``, ``fork``
      - ``cowtree.leaves.Leaves.records``, ``Leaves.fork``.
    * - ``acquire``, ``sync``, ``discard``

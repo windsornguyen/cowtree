@@ -17,7 +17,7 @@ from cowtree.errors import CowtreeError
 from cowtree.leaves import ForkRecord, Leaves
 from cowtree.lifecycle import Lifecycle
 from cowtree.metadata_types import Candidate, Operation, Request
-from cowtree.tree_types import PathPolicy, TreeEntry
+from cowtree.tree_types import CaptureMode, PathPolicy, TreeEntry
 from cowtree.trees import populate_tree
 from cowtree.workspace import Workspace
 
@@ -77,9 +77,11 @@ def test_independent_forks_reach_the_clone_phase_concurrently(
     leaves = manager(root=tmp_path)
     barrier = Barrier(2, timeout=10)
 
-    def overlap(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
+    def overlap(
+        source: Path, target: Path, policy: PathPolicy, *, capture: CaptureMode
+    ) -> tuple[TreeEntry, ...]:
         barrier.wait()
-        return populate_tree(source=source, target=target, policy=policy)
+        return populate_tree(source=source, target=target, policy=policy, capture=capture)
 
     monkeypatch.setattr("cowtree.leaves.populate_tree", overlap)
     with ThreadPoolExecutor(max_workers=2) as workers:
@@ -96,8 +98,10 @@ def test_failed_population_recovery_removes_only_the_owned_fork(
     leaves = manager(root=tmp_path)
     retained = leaves.fork(path=tmp_path / "retained")
 
-    def interrupt(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
-        populate_tree(source=source, target=target, policy=policy)
+    def interrupt(
+        source: Path, target: Path, policy: PathPolicy, *, capture: CaptureMode
+    ) -> tuple[TreeEntry, ...]:
+        populate_tree(source=source, target=target, policy=policy, capture=capture)
         raise InterruptedError("after population")
 
     with monkeypatch.context() as patch:
@@ -144,8 +148,8 @@ def test_process_exit_preserves_exactly_the_ready_fork(tmp_path: Path, phase: st
         "import cowtree.leaves as module\nfrom cowtree.workspace import Workspace\n"
         "if sys.argv[3]=='copy':\n"
         " original=module.populate_tree\n"
-        " def crash(source,target,policy):\n"
-        "  original(source=source,target=target,policy=policy); os._exit(99)\n"
+        " def crash(source,target,policy,*,capture):\n"
+        "  original(source=source,target=target,policy=policy,capture=capture); os._exit(99)\n"
         " module.populate_tree=crash\n"
         "else:\n"
         " original=module.Leaves.finish\n"

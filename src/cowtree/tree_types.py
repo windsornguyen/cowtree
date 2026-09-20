@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -16,6 +16,20 @@ class TreeKind(str, Enum):
     FILE = "file"
     DIRECTORY = "directory"
     SYMLINK = "symlink"
+
+
+class CaptureMode(str, Enum):
+    """Capture source hashes or metadata awaiting a pinned manifest check."""
+
+    CONTENT = "content"
+    METADATA = "metadata"
+
+
+@dataclass(frozen=True)
+class FileIdentity:
+    device: int
+    inode: int
+    changed_ns: int
 
 
 class DerivedHardlinks(str, Enum):
@@ -47,3 +61,5 @@ class TreeEntry:
     mtime_ns: int
     digest: str | None
     link: str | None = None
+    # Compare identities across source scans; cloned inodes are intentionally different.
+    identity: FileIdentity | None = field(default=None, compare=False, repr=False)

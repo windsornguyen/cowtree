@@ -22,7 +22,7 @@ from cowtree.metadata import Metadata
 from cowtree.metadata_types import Candidate, Digest, Operation, Record
 from cowtree.nodes import source_manifest
 from cowtree.publication import publish_directory
-from cowtree.tree_types import TreeKind
+from cowtree.tree_types import CaptureMode, TreeKind
 from cowtree.trees import populate_tree, scan_tree
 from cowtree.workspace import Workspace
 from cowtree.workspace_types import Leaf, Node
@@ -110,11 +110,11 @@ class Leaves:
                 record = self.prepare(metadata, target, snapshot, directory, lock.fileno())
                 record = record.model_copy(update={"check_candidate": check_candidate})
                 write_record(path=directory / "fork.json", record=record)
-            self.workspace.nodes.verify(node=snapshot)
             populate_tree(
                 source=self.workspace.root / "nodes" / snapshot.id / "tree",
                 target=target,
                 policy=snapshot.policy,
+                capture=CaptureMode.METADATA,
             )
             with self.workspace.session() as metadata:
                 leaf = self.finish(metadata, record, snapshot, lock.fileno())

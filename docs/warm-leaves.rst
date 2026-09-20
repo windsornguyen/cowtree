@@ -13,6 +13,14 @@ The operation pins its source node and retains a lock while copying outside the
 global workspace lock. Independent forks can therefore overlap. Completion
 checks source bytes and the Git index before making the leaf record durable.
 
+The pinned node already records the expected source hashes. Materialization checks
+file metadata, link text, and source identity before and after native cloning.
+The identity witness includes device, inode, and change time.
+Completion hashes the entire destination source and compares it with that pinned
+manifest before publishing Ready. This avoids repeated source hashing without
+trusting an unchecked destination. Raw mutable-tree capture and cloning retain
+their full content checks.
+
 ``recover`` skips live operation locks. It retires abandoned allocations and
 removes only a matching owned directory and registration. A durable ready leaf
 survives an interrupted operation cleanup. Uncertain ownership stops recovery

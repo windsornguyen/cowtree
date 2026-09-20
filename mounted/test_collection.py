@@ -159,7 +159,7 @@ def test_inflight_fork_pins_a_released_checkpoint(
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event
 
-    from cowtree.tree_types import PathPolicy, TreeEntry
+    from cowtree.tree_types import CaptureMode, PathPolicy, TreeEntry
     from cowtree.trees import populate_tree
 
     leaves = manager(root=tmp_path)
@@ -168,10 +168,12 @@ def test_inflight_fork_pins_a_released_checkpoint(
     node = Seals(leaves.workspace).seal(identity=leaf.id, retain=False)
     entered, resume = Event(), Event()
 
-    def paused(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
+    def paused(
+        source: Path, target: Path, policy: PathPolicy, *, capture: CaptureMode
+    ) -> tuple[TreeEntry, ...]:
         entered.set()
         assert resume.wait(timeout=15)
-        result = populate_tree(source=source, target=target, policy=policy)
+        result = populate_tree(source=source, target=target, policy=policy, capture=capture)
         return result
 
     with monkeypatch.context() as patch, ThreadPoolExecutor(max_workers=1) as workers:
