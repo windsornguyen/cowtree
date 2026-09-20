@@ -7,6 +7,120 @@ An inherited Cargo target directory is disposable derived state. Its presence
 does not establish a cache hit or make an artifact portable to another compiler,
 platform, environment, or absolute checkout or registry-source path.
 
+First workspace
+---------------
+
+An intern can start a build as soon as a prepared leaf is handed over. Prepare
+that leaf before handoff, assign its path to one person, and keep using the same
+leaf for edits and builds. Repeated builds do not require another fork. A cold
+import and a new fork still take time; large Rust repositories do not have a
+sub-second guarantee.
+
+Install Git and an appropriate Rust toolchain. Use a native-clone filesystem:
+APFS on macOS, or Btrfs/reflink-enabled XFS on Linux. The source, store, and leaves
+must share a filesystem. The store and leaves must sit outside the source checkout.
+
+1. Follow the `binary installation guide <install.rst>`_ and keep the extracted
+   directory in a stable location. Select the two sibling executables::
+
+       export COWTREE_BIN=/absolute/tools/cowtree/cowtree
+       export COWTREE_METADATA=/absolute/tools/cowtree/cowtree-metadata
+
+   For a developer installation instead, install uv and build both components from
+   the same reviewed revision::
+
+       git clone https://github.com/windsornguyen/cowtree.git /absolute/tools/cowtree
+       cd /absolute/tools/cowtree
+       git checkout --detach 369e39a8f1d7064c3cecac2a1f83322d7480a2f0
+       export COWTREE_CODE="$PWD"
+       CARGO_TARGET_DIR="$COWTREE_CODE/target" \
+         CARGO_BUILD_BUILD_DIR="$COWTREE_CODE/target" \
+         cargo build --locked --release -p cowtree-metadata
+       uv sync --locked
+       export COWTREE_BIN="$COWTREE_CODE/.venv/bin/cowtree"
+       export COWTREE_METADATA="$COWTREE_CODE/target/release/cowtree-metadata"
+
+   When using an existing local checkout, verify ``git rev-parse HEAD`` and build
+   from the selected revision. Keep the installation directory in place while
+   its stores exist; each store records the metadata executable's absolute path.
+   These instructions use the reviewed revision above; test a newer tip explicitly
+   before replacing an existing store's executable.
+
+2. Choose existing source and absent destination paths. Configure a Git author
+   identity if ``git var GIT_AUTHOR_IDENT`` fails. Stop editors, watchers, and build
+   processes that write to the source before importing it. Warm the source with
+   the toolchain and Cargo home that the intern will also use::
+
+       export PROJECT=/absolute/cow-volume/project
+       export STORE=/absolute/cow-volume/project-store
+       export LEAF=/absolute/cow-volume/intern-work
+       export CARGO_HOME=/absolute/existing/cargo-home
+       cd "$PROJECT"
+       export CARGO_BIN="$(rustup which cargo)"
+       export RUSTC="$(rustup which rustc)"
+       export RUSTC_WRAPPER= RUSTC_WORKSPACE_WRAPPER=
+       CARGO_TARGET_DIR="$PROJECT/target" CARGO_BUILD_BUILD_DIR="$PROJECT/target" \
+         "$CARGO_BIN" build --locked
+
+   Select a Cargo home that already contains this project's dependencies. Keep its
+   absolute path, compiler, profile, features, and build environment stable across
+   the source and leaf. Relocating registry sources can invalidate Cargo's cache
+   fingerprints. The commands disable compiler wrappers for this direct Cargo
+   workflow and place all generated build files under the selected target directory.
+
+3. Import the quiescent source once, then prepare the intern's leaf::
+
+       "$COWTREE_BIN" doctor "$PROJECT"
+       "$COWTREE_BIN" workspace --root "$STORE" init \
+         --source "$PROJECT" --binary "$COWTREE_METADATA" \
+         --derived target --derived-hardlinks clone --ephemeral .env
+       "$COWTREE_BIN" workspace --root "$STORE" fork "$LEAF"
+
+   The fork returns JSON containing its leaf ``id``. Save it for lifecycle commands.
+   The explicit hard-link policy gives every inherited Cargo output pathname its
+   own inode. The default policy rejects hard links. Secrets outside ``.env`` need
+   their own ephemeral prefixes. Tracked inputs cannot be declared ephemeral.
+
+4. Hand the intern the completed path and the same build environment. Compile,
+   edit a source file, and compile again in that leaf::
+
+       cd "$LEAF"
+       export CARGO_TARGET_DIR="$LEAF/target"
+       export CARGO_BUILD_BUILD_DIR="$LEAF/target"
+       "$CARGO_BIN" build --locked --offline --message-format=json > ../intern-first-build.jsonl
+       # Edit a source file in this leaf, then run the same command again.
+       "$CARGO_BIN" build --locked --offline --message-format=json > ../intern-edited-build.jsonl
+
+   Cargo reports each compiler artifact's ``fresh`` value in those JSON lines.
+   Functional build/run results establish whether the inherited outputs work.
+   Edits and cache writes stay private until explicit source publication. See the
+   `capture, check, and publish procedure <managed-workspaces.rst#edit-check-publish>`_
+   when the change is ready. Stop the leaf's writers before capture, installation,
+   or recovery.
+
+Each prepared path needs one owner. Cowtree's ``acquire`` command reserves source
+paths for publication; it does not assign a checkout to a worker. A caller that
+offers a pool of prepared leaves must provide its own exclusive assignment.
+
+Runnable smoke test
+-------------------
+
+The CLI smoke test creates a disposable two-crate workspace with no downloaded
+dependencies. It warms the seed target, imports it, prepares a leaf, builds twice,
+edits the dependency, and builds again. It verifies the unchanged source/cache and
+cleans up its own leaf. From the checkout containing this guide and smoke test,
+run it with the release metadata executable::
+
+    uv sync --locked --group test
+    COWTREE_QUICKSTART_CLI="$COWTREE_BIN" \
+    COWTREE_QUICKSTART_BINARY="$COWTREE_METADATA" \
+      PYTHONPATH=src uv run --no-sync pytest mounted/test_cargo_quickstart.py -q -s
+
+The printed receipt separates import and fork latency from compilation. It also
+records fresh and compiled artifact counts. It checks that an unchanged repeated
+build compiles zero artifacts and that the dependency edit produces the changed
+program output without changing the source checkout.
+
 Derived targets
 ---------------
 

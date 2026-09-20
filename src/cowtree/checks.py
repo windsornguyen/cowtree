@@ -123,12 +123,14 @@ class Checks:
     @staticmethod
     def run(command: tuple[str, ...], leaf: Leaf, log: Path, limits: tuple[int, int]) -> None:
         timeout_seconds, descriptor = limits
+        if getattr(sys, "frozen", False):
+            launcher = [sys.executable, "--cowtree-supervise"]
+        else:
+            launcher = [sys.executable, "-I", str(Path(__file__).with_name("supervise.py"))]
         with log.open("xb") as output:
             process = subprocess.Popen(  # noqa: S603
                 [
-                    sys.executable,
-                    "-I",
-                    str(Path(__file__).with_name("supervise.py")),
+                    *launcher,
                     "--timeout",
                     str(timeout_seconds),
                     "--descriptor",
