@@ -34,7 +34,11 @@ progress is recorded.
 These rules govern the authority's logical namespace. They do not change OS
 file permissions or prevent direct writes to a private working directory.
 The filesystem coordinator must still compare captured bytes with the pinned
-source. Submodule materialization and Python schema support are separate layers.
+source. Submodule materialization is a separate layer.
+
+Python ``Entry.file_kind`` exposes the physical kind while full record equality
+retains the read-only policy. Installation journals preserve that policy across
+replay. File-image checks compare bytes and mode, not logical access metadata.
 
 Run the admission and compatibility invariants::
 

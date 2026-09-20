@@ -31,9 +31,24 @@ class EntryKind(str, Enum):
     SYMLINK = "symlink"
 
 
+class ReadOnlyScope(Record):
+    file_kind: EntryKind
+    scope: str
+
+
+class ReadOnlyKind(Record):
+    read_only: ReadOnlyScope
+
+
 class Entry(Record):
     object: Digest
-    kind: EntryKind
+    kind: EntryKind | ReadOnlyKind
+
+    @property
+    def file_kind(self) -> EntryKind:
+        """Expose physical file kind without discarding authority policy from the record."""
+        kind = self.kind.read_only.file_kind if isinstance(self.kind, ReadOnlyKind) else self.kind
+        return kind
 
 
 class Grant(Record):
@@ -168,6 +183,8 @@ class MetadataReason(str, Enum):
     STALE_TOKEN = "stale_token"  # noqa: S105 - protocol error category, not a credential.
     NOT_ACTIVATED = "not_activated"
     DIRTY_PATH = "dirty_path"
+    READ_ONLY_PATH = "read_only_path"
+    INVALID_READ_ONLY_SCOPE = "invalid_read_only_scope"
     UPLOAD_NOT_READY = "upload_not_ready"
     REQUEST_EXPIRED = "request_expired"
     REQUEST_SEQUENCE = "request_sequence"
@@ -208,6 +225,12 @@ class ConflictDetails(Record):
 class PathDetails(Record):
     kind: Literal["path"]
     path: str
+
+
+class ReadOnlyScopeDetails(Record):
+    kind: Literal["read_only_scope"]
+    path: str
+    scope: str
 
 
 class IdentifierDetails(Record):
@@ -301,6 +324,7 @@ ErrorDetails = Annotated[
     NoDetails
     | ConflictDetails
     | PathDetails
+    | ReadOnlyScopeDetails
     | IdentifierDetails
     | LeafDetails
     | SequenceDetails

@@ -73,7 +73,7 @@ class Captures:
             grant = leaf.grants[path]
             if entry is not None:
                 source = self.workspace.root / "nodes" / node.id / "tree" / path
-                if entry.kind is EntryKind.SYMLINK:
+                if entry.file_kind is EntryKind.SYMLINK:
                     staged = metadata.call(
                         Operation.STAGE,
                         {"leaf": leaf.id, "data": list(os.fsencode(os.readlink(source)))},

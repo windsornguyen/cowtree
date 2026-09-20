@@ -1,4 +1,8 @@
-"""Replayable per-file installation with retained before and after images."""
+"""Replayable per-file installation with retained before and after images.
+
+Physical image checks compare bytes and file mode. Authority policy remains in
+the journal records but is not an operating-system attribute.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +31,15 @@ class InstallRecord(Record):
     changes: list[Change]
     device: int = 0
     inode: int = 0
+
+
+def same_image(actual: Entry | None, expected: Entry | None) -> bool:
+    """Compare physical images without treating snapshot access policy as file metadata."""
+    if actual is None or expected is None:
+        matches = actual is expected
+        return matches
+    matches = actual.object == expected.object and actual.file_kind is expected.file_kind
+    return matches
 
 
 def local_path(root: Path, relative: str) -> Path:
@@ -71,28 +84,28 @@ def fingerprint(path: Path) -> Entry | None:
 
 def save_image(source: Path, target: Path, entry: Entry) -> None:
     """Create a durable owned image of one existing filesystem entry."""
-    if entry.kind is EntryKind.SYMLINK:
+    if entry.file_kind is EntryKind.SYMLINK:
         target.symlink_to(os.readlink(source))
     else:
         clone_regular_file(source=source, target=target)
         sync_file(path=target)
-    if fingerprint(path=target) != entry:
+    if not same_image(fingerprint(path=target), entry):
         raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, f"entry changed during capture: {source}")
 
 
 def stage_object(source: Path, target: Path, entry: Entry) -> None:
     """Materialize verified object bytes into their declared source file kind."""
-    if entry.kind is EntryKind.SYMLINK:
+    if entry.file_kind is EntryKind.SYMLINK:
         data = source.read_bytes()
         if hashlib.sha256(data).hexdigest() != entry.object:
             raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"corrupt object: {entry.object}")
         target.symlink_to(data.decode("utf-8"))
     else:
         clone_regular_file(source=source, target=target)
-        target.chmod(0o755 if entry.kind is EntryKind.EXECUTABLE else 0o644)
+        target.chmod(0o755 if entry.file_kind is EntryKind.EXECUTABLE else 0o644)
         os.utime(target, None)
         sync_file(path=target)
-    if fingerprint(path=target) != entry:
+    if not same_image(fingerprint(path=target), entry):
         raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, f"corrupt object: {entry.object}")
 
 
@@ -152,7 +165,7 @@ class Installation:
         }
         for change in record.changes:
             target = local_path(root=root, relative=change.path)
-            if fingerprint(path=target) != change.before:
+            if not same_image(fingerprint(path=target), change.before):
                 raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, f"local edit: {change.path}")
             if change.after is None:
                 continue
@@ -198,7 +211,7 @@ class Installation:
         try:
             for index, change in enumerate(record.changes):
                 target = local_path(root=root, relative=change.path)
-                if fingerprint(path=target) != change.before:
+                if not same_image(fingerprint(path=target), change.before):
                     raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, f"local edit: {change.path}")
                 if change.before == change.after:
                     continue
@@ -252,15 +265,15 @@ class Installation:
             desired = change.before if rollback else change.after
             target = local_path(root=self.record.root, relative=change.path)
             current = fingerprint(path=target)
-            if current == desired:
-                if desired is not None and desired.kind is not EntryKind.SYMLINK:
+            if same_image(current, desired):
+                if desired is not None and desired.file_kind is not EntryKind.SYMLINK:
                     sync_file(path=target)
                 parent = target.parent
                 while not parent.is_dir() and parent != root:
                     parent = parent.parent
                 sync_directory(path=parent)
                 continue
-            if current != expected:
+            if not same_image(current, expected):
                 raise CowtreeError(
                     CowtreeErrorCode.DIRTY_SOURCE, f"installation conflict: {change.path}"
                 )
@@ -276,7 +289,7 @@ class Installation:
             if not os.path.lexists(temporary):
                 save_image(source=image, target=temporary, entry=desired)
                 sync_directory(path=self.directory)
-            if fingerprint(path=temporary) != desired:
+            if not same_image(fingerprint(path=temporary), desired):
                 raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "installation image changed")
             os.replace(temporary, target)
             sync_directory(path=target.parent)
