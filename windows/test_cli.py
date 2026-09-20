@@ -127,6 +127,8 @@ def test_git_modes_and_real_symlink_text_are_preserved(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("dangling", [False, True])
 def test_directory_symlink_kind_is_preserved(tmp_path: Path, dangling: bool) -> None:
+    if sys.platform != "win32":
+        pytest.skip("requires Windows reparse-point attributes")
     io = CommandRunner()
     source = repository(io=io, root=tmp_path)
     io.run(argv=["git", "-C", str(source), "config", "core.symlinks", "true"])

@@ -232,14 +232,18 @@ class WorktreeCreation:
         """Clone one tracked file or preserve its symlink text."""
         source = self.repository.path / entry.path
         target = self.target / entry.path
-        mode = source.lstat().st_mode
+        metadata = source.lstat()
+        mode = metadata.st_mode
         target.parent.mkdir(parents=True, exist_ok=True)
         if entry.mode is FileMode.SYMLINK:
             if not stat.S_ISLNK(mode):
                 raise CowtreeError(
                     CowtreeErrorCode.DIRTY_SOURCE, f"tracked file type changed: {entry.path}"
                 )
-            os.symlink(os.readlink(source), target)
+            directory = sys.platform == "win32" and bool(
+                metadata.st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY
+            )
+            os.symlink(os.readlink(source), target, target_is_directory=directory)
             return
         if not stat.S_ISREG(mode):
             raise CowtreeError(
