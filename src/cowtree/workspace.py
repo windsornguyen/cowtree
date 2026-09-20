@@ -72,12 +72,6 @@ class Workspace:
         config = WorkspaceConfig.model_validate_json((root / "workspace.json").read_bytes())
         if config.location != root:
             raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "workspace identity mismatch")
-        for name in DIRECTORIES:
-            directory = root / name
-            if directory.is_symlink() or not directory.is_dir():
-                raise CowtreeError(
-                    CowtreeErrorCode.INVALID_ARGUMENTS, f"workspace layout mismatch: {name}"
-                )
         result = cls(root=root, config=config)
         return result
 
@@ -93,6 +87,13 @@ class Workspace:
                     raise CowtreeError(
                         CowtreeErrorCode.INVALID_ARGUMENTS, "workspace directory changed"
                     )
+                for name in DIRECTORIES:
+                    directory = self.root / name
+                    if directory.is_symlink() or not directory.is_dir():
+                        raise CowtreeError(
+                            CowtreeErrorCode.INVALID_ARGUMENTS,
+                            f"workspace layout mismatch: {name}",
+                        )
                 with Metadata(
                     root=self.root / "authority",
                     binary=self.config.binary,

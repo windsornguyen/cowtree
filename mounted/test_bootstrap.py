@@ -62,8 +62,9 @@ def test_missing_workspace_layout_is_rejected_without_recreation(
     )
     (workspace.root / missing).rmdir()
     before = (workspace.root / "workspace.json").read_bytes()
-    with pytest.raises(CowtreeError, match="workspace layout mismatch"):
-        Workspace.open(root=workspace.root)
+    reopened = Workspace.open(root=workspace.root)
+    with pytest.raises(CowtreeError, match="workspace layout mismatch"), reopened.session():
+        pytest.fail("incomplete workspace admitted")
     assert not (workspace.root / missing).exists()
     assert (workspace.root / "workspace.json").read_bytes() == before
 

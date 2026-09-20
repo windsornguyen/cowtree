@@ -14,6 +14,7 @@ from cowtree.captures import Captures
 from cowtree.checks import Checks
 from cowtree.collection import Collector
 from cowtree.errors import CowtreeError, CowtreeErrorCode
+from cowtree.exec import CommandRunner
 from cowtree.leaves import Leaves
 from cowtree.lifecycle import Lifecycle
 from cowtree.metadata import MetadataError
@@ -22,11 +23,13 @@ from cowtree.publications import Publications
 from cowtree.resolutions import Choice, Resolutions
 from cowtree.seals import Seals
 from cowtree.tree_types import DerivedHardlinks, PathPolicy
+from cowtree.version import WorkspaceVersions
 from cowtree.views import Views
 from cowtree.workspace import Workspace
 
 
 class Action(str, Enum):
+    VERSION = "version"
     INIT = "init"
     IMPORT_STATUS = "import-status"
     LIST = "list"
@@ -158,6 +161,12 @@ class Dispatch:
     workspace: Workspace
 
     def execute(self, options: Options) -> JsonValue:
+        if options.action is Action.VERSION:
+            versions = WorkspaceVersions.read(
+                io=CommandRunner(), binary=self.workspace.config.binary
+            )
+            result = versions.model_dump(mode="json")
+            return result
         if options.action in (Action.PREPARE_BATCH, Action.CHECK_BATCH, Action.COMMIT_BATCH):
             batch = self.batch(options=options)
             result = batch.model_dump(mode="json")

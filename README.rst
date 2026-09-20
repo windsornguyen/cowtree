@@ -69,6 +69,29 @@ request that behavior explicitly; ``-b`` creates a new branch instead.
 commit. ``--lock`` retains Git's worktree lock. ``--reason`` requires ``--lock``;
 an omitted reason remains ``None`` in the returned metadata.
 
+Use ``add --branch EXISTING_BRANCH PATH`` to attach an unused local branch
+instead of creating one. It is mutually exclusive with ``-b`` and ``--detach``.
+The branch must name the source commit; Git rejects a branch already checked out
+elsewhere. The Python equivalent is ``WorktreeAddRequest(existing_branch=...)``.
+Neither failed creation nor removal deletes an existing branch. Index creation
+never resets its reference, including when an external writer moves it.
+
+Use ``add --committed PATH REF`` to fork a committed ref even when the caller's
+checkout is dirty or at a different commit. With ``--branch``, that branch's tip
+selects the commit; omit REF. The Python request uses
+``source_mode=SourceMode.COMMIT`` from ``cowtree.types``. The default remains
+``SourceMode.CHECKOUT`` and preserves the clean-source requirement.
+
+Committed mode resolves the ref once, materializes a private Git checkout, and
+clones its files through native CoW. It never stashes or resets the caller's
+working files or index. Git applies checkout conversions in the private seed.
+The seed is removed before success, so no extra checked-out payload is retained.
+This mode pays Git checkout cost and does not provide warm-cache inheritance.
+Unsupported clone storage still fails rather than copying into the destination.
+If seed cleanup fails, inspect the named directory and ``git worktree list``:
+the destination may already be complete. Unhandled process crashes can leave the
+locked private seed behind, under the same standalone recovery limits below.
+
 Cowtree always populates tracked files through CoW and prepares a clean index.
 There is no pass-through for arbitrary Git arguments. ``-B``, ``--force`` on
 ``add``, ``--orphan``, ``--cow``, ``--no-checkout``, tracking options, and
@@ -76,13 +99,25 @@ unknown options are rejected.
 
 ``list`` accepts a source checkout or defaults to the current repository.
 Use ``--json`` for machine-readable output, including paths containing line
-breaks. ``remove`` operates in the current repository and preserves branches.
+breaks. ``add``, ``doctor``, and ``remove`` also accept ``--json``: successes
+contain ``status: "ok"``, ``kind``, and ``value``. Add returns the registered
+worktree, doctor returns its probe report, and remove returns null. An unsupported
+doctor probe has a null clone tool and still exits 1. Structured failures emit
+one ``status: "error"``, ``code``, and ``message`` record on stderr; invalid
+syntax exits 2. ``list --json`` retains its existing array format.
+
+``remove`` operates in the current repository and preserves branches.
 ``--force`` permits removal of a dirty worktree, but does not override a worktree
 lock. Unlock it with ``git worktree unlock PATH`` first. ``doctor`` probes an
 existing directory and defaults to the current directory.
 
 Exit codes are ``0`` for success, ``1`` for an operation failure or unsupported
 doctor result, and ``2`` for invalid command syntax.
+
+``cowtree --version`` reports the installed package version. Add ``--json`` for
+``version`` and ``revision`` fields. The revision comes only from the installer's
+PEP 610 metadata. Wheels and editable installs without that metadata report null
+("unknown" in text), never the current repository's HEAD.
 
 Python API
 ----------
@@ -251,14 +286,16 @@ recovery guarantee for ``SIGKILL``, power loss, or a host crash. Such failures
 can leave a partially initialized, locked worktree or a newly created branch.
 Inspect and repair that state with Git before reusing the destination.
 
-Workspace protocol proposal
----------------------------
+Workspace protocol design
+-------------------------
 
-The `versioned workspace proposal <docs/workspace-protocol.rst>`_ describes
+The `versioned workspace design <docs/workspace-protocol.rst>`_ explains the
 immutable snapshots, path reservations, fencing tokens, and batched publication
-for a future metadata coordinator. Its bounded model and proof limits are
-documented separately. These operations are not part of the current CLI or
-Python API.
+used by managed workspaces. The `managed workspace guide
+<docs/managed-workspaces.rst>`_ defines the available CLI and Python operations.
+Transparent file-descriptor rebinding, native change tracking, and distributed
+coordination remain future work. Bounded model checks do not establish those
+capabilities or power-loss durability.
 
 Contributing
 ------------
@@ -314,5 +351,7 @@ Run the complete publication example with::
 
     cargo run --locked -p cowtree-metadata --example publish
 
-The Python Git-worktree API does not use this backend yet. Its activation
-operation installs a logical view; filesystem installation is a separate step.
+The standalone ``cowtree.core`` API does not use this backend. The managed
+``cowtree.workspace.Workspace`` API uses it for publication and coordinates
+filesystem installation in Python. Calling the Rust authority directly changes
+only its logical view; it does not install files in a working directory.

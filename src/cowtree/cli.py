@@ -10,13 +10,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 from inline_tests import test
 
+from cowtree.cli_output import Failure, Success, json_requested
 from cowtree.core import add_worktree, inspect_path, list_all_worktrees, remove_worktree
-from cowtree.errors import CowtreeError
-from cowtree.types import Arguments, Command, WorktreeAddRequest
+from cowtree.errors import CowtreeError, CowtreeErrorCode
+from cowtree.types import Arguments, Command, SourceMode, WorktreeAddRequest
+from cowtree.version import VersionInfo
 
 
 if TYPE_CHECKING:
@@ -33,9 +35,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         code = cli.run(argv=args)
     except CowtreeError as error:
-        print(f"cowtree: {error.code.value}: {error.message}", file=sys.stderr)
+        message = (
+            Failure.from_error(error=error).json()
+            if json_requested(argv=args)
+            else f"cowtree: {error.code.value}: {error.message}"
+        )
+        print(message, file=sys.stderr)
         code = 1
     return code
+
+
+class UsageError(CowtreeError):
+    """Retain the relevant subcommand's usage for human diagnostics."""
+
+    def __init__(self, message: str, usage: str) -> None:
+        super().__init__(code=CowtreeErrorCode.INVALID_ARGUMENTS, message=message)
+        self.usage = usage
+
+
+class Parser(argparse.ArgumentParser):
+    """Defer error rendering until the requested output format is known."""
+
+    def error(self, message: str) -> NoReturn:
+        raise UsageError(message=message, usage=self.format_usage())
 
 
 class CowtreeCLI:
@@ -43,13 +65,17 @@ class CowtreeCLI:
 
     def __init__(self) -> None:
         """Configure each supported command without accepting arbitrary Git flags."""
-        self.parser = argparse.ArgumentParser(prog="cowtree", allow_abbrev=False)
+        self.parser = Parser(prog="cowtree", allow_abbrev=False)
+        self.parser.add_argument("--version", action="store_true")
+        self.parser.add_argument("--json", action="store_true", help="structured version output")
         commands = self.parser.add_subparsers(title="commands")
         commands.add_parser("workspace", help="manage warm workspaces and checked publication")
         parsers: dict[Command, argparse.ArgumentParser] = {}
         for command in Command:
             parser = commands.add_parser(command.value, allow_abbrev=False)
             parser.set_defaults(command=command)
+            if command is not Command.HELP:
+                parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
             parsers[command] = parser
 
         self.add_parser = parsers[Command.ADD]
@@ -58,15 +84,23 @@ class CowtreeCLI:
         )
         mode = self.add_parser.add_mutually_exclusive_group()
         mode.add_argument("-b", dest="branch", metavar="NEW_BRANCH")
+        mode.add_argument("--branch", dest="existing_branch", metavar="EXISTING_BRANCH")
         mode.add_argument("--detach", "-d", action="store_true")
         self.add_parser.add_argument("--lock", action="store_true")
+        self.add_parser.add_argument(
+            "--committed",
+            dest="source_mode",
+            action="store_const",
+            const=SourceMode.COMMIT,
+            default=SourceMode.CHECKOUT,
+            help="materialize the requested commit without including private working changes",
+        )
         self.add_parser.add_argument(
             "--reason", metavar="TEXT", help="lock reason; requires --lock"
         )
         self.add_parser.add_argument("path", type=Path)
         self.add_parser.add_argument("commitish", nargs="?", default="HEAD", metavar="commit-ish")
 
-        parsers[Command.LIST].add_argument("--json", action="store_true")
         parsers[Command.LIST].add_argument("path", type=Path, nargs="?", metavar="source")
         parsers[Command.REMOVE].add_argument("--force", action="store_true")
         parsers[Command.REMOVE].add_argument("path", type=Path)
@@ -84,6 +118,19 @@ class CowtreeCLI:
         options = Arguments()
         try:
             self.parser.parse_args(args=argv, namespace=options)
+            if options.version:
+                if options.command is not Command.HELP:
+                    self.parser.error("--version cannot be combined with an operation")
+                version = VersionInfo.installed()
+                revision = "unknown" if version.revision is None else version.revision
+                message = (
+                    version.model_dump_json()
+                    if options.json
+                    else f"cowtree {version.version} (revision {revision})"
+                )
+                print(message)
+                code = 0
+                return code
             match options.command:
                 case Command.ADD:
                     code = self.add(options=options)
@@ -96,8 +143,16 @@ class CowtreeCLI:
                 case Command.HELP:
                     self.parser.print_help()
                     code = 0
+        except UsageError as error:
+            message = (
+                Failure.from_error(error=error).json()
+                if json_requested(argv=argv)
+                else f"{error.usage}cowtree: error: {error.message}"
+            )
+            print(message, file=sys.stderr)
+            code = 2
         except SystemExit as error:
-            assert isinstance(error.code, int)  # noqa: PT017
+            assert isinstance(error.code, int)  # noqa: PT017 -- argparse help exits with an integer.
             code = error.code
         return code
 
@@ -110,6 +165,8 @@ class CowtreeCLI:
             request = WorktreeAddRequest(
                 path=options.path,
                 branch=options.branch,
+                existing_branch=options.existing_branch,
+                source_mode=options.source_mode,
                 commitish=options.commitish,
                 detach=options.detach,
                 lock=options.lock,
@@ -118,7 +175,10 @@ class CowtreeCLI:
         except CowtreeError as error:
             self.add_parser.error(error.message)
         worktree = add_worktree(request=request)
-        print(worktree.path)
+        message = (
+            Success(kind=Command.ADD, value=worktree).json() if options.json else str(worktree.path)
+        )
+        print(message)
         code = 0
         return code
 
@@ -142,6 +202,8 @@ class CowtreeCLI:
         """Remove a registered worktree under the requested dirty-file policy."""
         assert options.path is not None
         remove_worktree(path=options.path, force=options.force)
+        if options.json:
+            print(Success(kind=Command.REMOVE, value=None).json())
         code = 0
         return code
 
@@ -149,6 +211,10 @@ class CowtreeCLI:
         """Probe native clone support and print the selected filesystem primitive."""
         path = Path.cwd() if options.path is None else options.path
         report = inspect_path(path=path)
+        if options.json:
+            print(Success(kind=Command.DOCTOR, value=report).json())
+            code = 0 if report.supported else 1
+            return code
         clone_tool = report.clone_tool
         if clone_tool is not None:
             print(f"{report.path}: {report.filesystem.value} via {clone_tool.value}")

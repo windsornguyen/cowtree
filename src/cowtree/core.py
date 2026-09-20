@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import os
 from pathlib import Path
 import stat
 
+from cowtree.committed_source import CommittedSource
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
 from cowtree.fs import doctor
@@ -16,6 +17,7 @@ from cowtree.types import (
     Checkout,
     DoctorReport,
     FileMode,
+    SourceMode,
     TrackedFile,
     Worktree,
     WorktreeAddRequest,
@@ -26,14 +28,21 @@ from cowtree.types import (
 
 
 def add_worktree(request: WorktreeAddRequest, runner: CommandRunner | None = None) -> Worktree:
-    """Clone a clean source at its current commit and create the requested branch."""
+    """Clone the selected source under its explicit checkout or committed-ref policy."""
     if runner is None:
         runner = CommandRunner()
     try:
         repository = GitRepository.discover(io=runner, source=request.source)
         with repository.lock():
-            creation = WorktreeCreation.prepare(repository=repository, request=request)
-            worktree = creation.run()
+            if request.source_mode is SourceMode.COMMIT:
+                seed = CommittedSource.resolve(repository=repository, request=request)
+                with seed.open() as source:
+                    pinned = replace(request, source=source.path, commitish=seed.commit)
+                    creation = WorktreeCreation.prepare(repository=source, request=pinned)
+                    worktree = creation.run()
+            else:
+                creation = WorktreeCreation.prepare(repository=repository, request=request)
+                worktree = creation.run()
     except OSError as error:
         raise CowtreeError(
             code=CowtreeErrorCode.COMMAND_FAILED, message=f"add failed: {error}"
@@ -121,19 +130,36 @@ class WorktreeCreation:
             raise CowtreeError(
                 CowtreeErrorCode.HEAD_MISMATCH, "requested commit differs from source HEAD"
             )
-        branch = request.branch
-        if branch is not None:
-            checked = repository.capture(args=["check-ref-format", "--branch", branch])
-            if checked.removesuffix("\n") != branch:
-                raise CowtreeError(
-                    CowtreeErrorCode.INVALID_ARGUMENTS, "branch must be a literal name"
-                )
-            if repository.has_branch(branch=branch):
-                raise CowtreeError(
-                    CowtreeErrorCode.INVALID_ARGUMENTS, f"branch already exists: {branch}"
-                )
         creation = cls(repository=repository, request=request, checkout=checkout, target=target)
+        creation.validate_branch()
         return creation
+
+    def validate_branch(self) -> None:
+        """Require a literal branch with the requested creation or attachment policy."""
+        request = self.request
+        repository = self.repository
+        branch = request.branch if request.branch is not None else request.existing_branch
+        if branch is None:
+            return
+        checked = repository.capture(args=["check-ref-format", "--branch", branch])
+        if checked.removesuffix("\n") != branch:
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "branch must be a literal name")
+        exists = repository.has_branch(branch=branch)
+        if exists and request.branch is not None:
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, f"branch already exists: {branch}"
+            )
+        if request.existing_branch is None:
+            return
+        if not exists:
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, f"branch does not exist: {branch}"
+            )
+        head = repository.capture(args=["rev-parse", f"refs/heads/{branch}"]).strip()
+        if head != self.checkout.commit:
+            raise CowtreeError(
+                CowtreeErrorCode.HEAD_MISMATCH, "existing branch differs from source HEAD"
+            )
 
     def run(self) -> Worktree:
         """Register and populate the worktree. Roll back all owned state on exceptions."""
@@ -189,6 +215,9 @@ class WorktreeCreation:
         args = ["worktree", "add", "--no-checkout", "--lock"]
         if self.request.reason is not None:
             args.extend(["--reason", self.request.reason])
+        if self.request.existing_branch is not None:
+            self.repository.run(args=[*args, "--", str(self.target), self.request.existing_branch])
+            return
         branch = self.request.branch
         args.extend(["-b", branch] if branch is not None else ["--detach"])
         self.repository.run(args=[*args, "--", str(self.target), self.checkout.commit])
@@ -230,9 +259,7 @@ class WorktreeCreation:
                 "core.fsmonitor=false",
                 "-c",
                 "core.ignorestat=false",
-                "reset",
-                "--mixed",
-                "-q",
+                "read-tree",
                 self.checkout.commit,
             ]
         )
