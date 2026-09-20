@@ -68,5 +68,7 @@ def working_policy(source: Path, policy: PathPolicy) -> PathPolicy:
         ephemeral=policy.ephemeral,
         ignored=(*policy.ignored, *prefixes),
         derived_hardlinks=policy.derived_hardlinks,
+        submodules=policy.submodules,
+        pins=policy.pins,
     )
     return result

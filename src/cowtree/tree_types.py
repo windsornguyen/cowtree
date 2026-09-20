@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from cowtree.submodule_types import PinnedSubmodule, SubmodulePolicy
+
 
 class PathClass(str, Enum):
     SOURCE = "source"
@@ -47,6 +49,8 @@ class PathPolicy:
     ephemeral: tuple[str, ...] = ()
     ignored: tuple[str, ...] = ()
     derived_hardlinks: DerivedHardlinks = DerivedHardlinks.REJECT
+    submodules: SubmodulePolicy = SubmodulePolicy.REJECT
+    pins: tuple[PinnedSubmodule, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -28,6 +28,7 @@ from cowtree.metadata_types import (
 from cowtree.nodes import Nodes
 from cowtree.projection import GitProjection, ProjectionSpec
 from cowtree.publication import publish_directory
+from cowtree.submodules import admit
 from cowtree.tree_types import PathPolicy
 from cowtree.workspace_types import Node, WorkspaceConfig
 
@@ -153,6 +154,7 @@ class Workspace:
                 "workspace must be absent and outside the source checkout",
             )
         root = root.resolve()
+        policy = admit(repository=repository, policy=policy)
         if not doctor(path=root.parent).supported:
             raise CowtreeError(
                 CowtreeErrorCode.COW_UNAVAILABLE, "workspace parent lacks native CoW"
@@ -211,7 +213,11 @@ class Workspace:
                 io=CommandRunner(descriptors=(*repository.io.descriptors, descriptor)),
                 path=repository.path,
             )
-            checkout = locked.snapshot()
+            checkout = locked.snapshot(submodules=policy.submodules)
+            if checkout.submodules != policy.pins:
+                raise CowtreeError(
+                    CowtreeErrorCode.HEAD_MISMATCH, "submodule pins changed during initialization"
+                )
             nodes = Nodes(
                 directory=staging / "nodes", projection=GitProjection(locked), policy=policy
             )

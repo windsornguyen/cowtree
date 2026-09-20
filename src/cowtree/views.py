@@ -61,7 +61,9 @@ class Views:
             )
         GitRepository(io=CommandRunner(), path=leaf.path).check_detached(expected=(leaf.git_head,))
         policy = working_policy(source=leaf.path, policy=self.workspace.config.policy)
-        result = source_manifest(root=leaf.path, entries=scan_tree(root=leaf.path, policy=policy))
+        result = source_manifest(
+            root=leaf.path, entries=scan_tree(root=leaf.path, policy=policy), policy=policy
+        )
         return result
 
     @staticmethod
