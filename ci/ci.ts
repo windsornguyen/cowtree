@@ -130,6 +130,39 @@ export const ci = workflow(
         "timeout-minutes": 15,
         steps: [checkout, setupUv, uses(nativeFilesystems, { with: {} })],
       }),
+      windows: job({
+        name: "Windows ReFS native cloning",
+        "runs-on": "windows-2025",
+        "timeout-minutes": 15,
+        steps: [
+          checkout,
+          setupUv,
+          run("Install Python", "uv", ["python", "install", "3.10"]),
+          run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
+          run("Check ReFS isolation and NTFS refusal", "pwsh", [
+            "-NoProfile", "-File", "scripts/test_windows.ps1",
+          ]),
+        ],
+      }),
+      "windows-arm": job({
+        name: "Windows ARM64 Dev Drive cloning",
+        "runs-on": "windows-11-arm",
+        "timeout-minutes": 15,
+        env: { UV_PYTHON: "cpython-3.14-windows-aarch64-none" },
+        steps: [
+          checkout,
+          setupUv,
+          run("Install native Python", "uv", ["python", "install", "cpython-3.14-windows-aarch64-none"]),
+          run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
+          run("Verify native ARM64 interpreter", "uv", [
+            "run", "--no-sync", "python", "-c",
+            "import sysconfig; actual = sysconfig.get_platform(); print(actual); assert actual == 'win-arm64', actual",
+          ]),
+          run("Check Dev Drive isolation and NTFS refusal", "pwsh", [
+            "-NoProfile", "-File", "scripts/test_windows.ps1", "-DevDrive",
+          ]),
+        ],
+      }),
       specification: job({
         name: "Workspace protocol model",
         "runs-on": "ubuntu-24.04",

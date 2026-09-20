@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import ctypes
 import errno
-import fcntl
 from functools import cache
 import os
 from pathlib import Path
 import platform
 import stat
+import sys
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 
@@ -47,6 +47,11 @@ def clone_regular_file(source: Path, target: Path) -> None:
         if system == "Linux":
             reflink(source=source, target=target)
             return
+        if system == "Windows":
+            from cowtree.windows import Kernel
+
+            Kernel().clone(source=source, target=target)
+            return
         raise CowtreeError(
             code=CowtreeErrorCode.COW_UNAVAILABLE, message=f"{system} is unsupported"
         )
@@ -69,6 +74,10 @@ def clonefile(source: Path, target: Path) -> None:
 
 def reflink(source: Path, target: Path) -> None:
     """Clone with Linux FICLONE and clean up the owned destination on failure."""
+    if sys.platform == "win32":
+        raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, "FICLONE is unavailable on Windows")
+    import fcntl
+
     with source.open("rb") as src, target.open("xb") as dst:
         try:
             metadata = os.fstat(src.fileno())
