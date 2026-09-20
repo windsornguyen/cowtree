@@ -5,7 +5,9 @@
 //! Commands receive argument arrays and retain the caller's repository selection.
 //! A handle on the common lock serializes native and Python Cowtree clients.
 
-use crate::{FileMode, TrackedFile, Worktree, WorktreeError as Error, WorktreeResult as Result};
+use crate::{
+    FileMode, GitField, TrackedFile, Worktree, WorktreeError as Error, WorktreeResult as Result,
+};
 use std::{
     ffi::OsStr,
     fs::File,
@@ -50,7 +52,7 @@ impl Git {
 
     pub(crate) fn text(&self, command: &mut Command) -> Result<String> {
         let bytes = trim_newline(self.capture(command)?);
-        String::from_utf8(bytes).map_err(|_| Error::GitResponse { field: "text" })
+        String::from_utf8(bytes).map_err(|_| Error::GitResponse { field: GitField::Text })
     }
 
     pub(crate) fn head(&self) -> Result<String> {
@@ -122,6 +124,22 @@ impl Git {
         self.text(self.command().args(["rev-parse", "--verify", "--end-of-options"]).arg(selected))
     }
 
+    pub(crate) fn has_branch(&self, branch: &OsStr) -> Result<bool> {
+        let mut name = std::ffi::OsString::from("refs/heads/");
+        name.push(branch);
+        let output = self
+            .command()
+            .args(["show-ref", "--verify", "--quiet"])
+            .arg(name)
+            .output()
+            .map_err(|error| Error::io(&self.root, error))?;
+        match output.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => checked(output).map(|_| true),
+        }
+    }
+
     pub(crate) fn entries(&self, revision: &OsStr) -> Result<Vec<TrackedFile>> {
         let data = self.capture(self.command().args(["ls-tree", "-r", "-z"]).arg(revision))?;
         data.split(|byte| *byte == 0).filter(|record| !record.is_empty()).map(parse_entry).collect()
@@ -142,7 +160,7 @@ impl Git {
             }
         }
         if !fields.is_empty() {
-            return Err(Error::GitResponse { field: "worktree terminator" });
+            return Err(Error::GitResponse { field: GitField::WorktreeTerminator });
         }
         Ok(records)
     }
@@ -190,7 +208,7 @@ pub(crate) fn decode_path(bytes: Vec<u8>) -> Result<PathBuf> {
     {
         String::from_utf8(bytes)
             .map(PathBuf::from)
-            .map_err(|_| Error::GitResponse { field: "path encoding" })
+            .map_err(|_| Error::GitResponse { field: GitField::PathEncoding })
     }
 }
 
@@ -198,12 +216,12 @@ fn parse_entry(record: &[u8]) -> Result<TrackedFile> {
     let tab = record
         .iter()
         .position(|byte| *byte == b'\t')
-        .ok_or(Error::GitResponse { field: "tree entry" })?;
+        .ok_or(Error::GitResponse { field: GitField::TreeEntry })?;
     let path = decode_path(record[tab + 1..].to_vec())?;
     let mode = record[..tab]
         .split(|byte| *byte == b' ')
         .next()
-        .ok_or(Error::GitResponse { field: "tree mode" })?;
+        .ok_or(Error::GitResponse { field: GitField::TreeMode })?;
     let mode = match mode {
         b"100644" => FileMode::Regular,
         b"100755" => FileMode::Executable,
@@ -227,20 +245,20 @@ fn parse_worktree(fields: &[&[u8]]) -> Result<Worktree> {
     };
     for field in fields {
         let mut pair = field.splitn(2, |byte| *byte == b' ');
-        let key = pair.next().ok_or(Error::GitResponse { field: "worktree key" })?;
+        let key = pair.next().ok_or(Error::GitResponse { field: GitField::WorktreeKey })?;
         let value = pair.next().unwrap_or_default();
         match key {
             b"worktree" => path = Some(decode_path(value.to_vec())?),
             b"HEAD" => {
                 record.head = Some(
                     String::from_utf8(value.to_vec())
-                        .map_err(|_| Error::GitResponse { field: "HEAD" })?,
+                        .map_err(|_| Error::GitResponse { field: GitField::Head })?,
                 )
             }
             b"branch" => {
                 record.branch = Some(
                     String::from_utf8(value.to_vec())
-                        .map_err(|_| Error::GitResponse { field: "branch" })?,
+                        .map_err(|_| Error::GitResponse { field: GitField::Branch })?,
                 )
             }
             b"detached" => record.detached = true,
@@ -250,13 +268,13 @@ fn parse_worktree(fields: &[&[u8]]) -> Result<Worktree> {
                 if !value.is_empty() {
                     record.reason = Some(
                         String::from_utf8(value.to_vec())
-                            .map_err(|_| Error::GitResponse { field: "lock reason" })?,
+                            .map_err(|_| Error::GitResponse { field: GitField::LockReason })?,
                     );
                 }
             }
             _ => {}
         }
     }
-    record.path = path.ok_or(Error::GitResponse { field: "worktree path" })?;
+    record.path = path.ok_or(Error::GitResponse { field: GitField::WorktreePath })?;
     Ok(record)
 }

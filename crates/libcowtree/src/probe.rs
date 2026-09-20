@@ -2,7 +2,9 @@
 
 //! Establish clone support by comparing a private pair before and after writes.
 
-use crate::{Error, WorktreeError as WorkflowError, WorktreeResult, clone_file};
+use crate::{
+    Error, ProbeInvariant, RequestIssue, WorktreeError as WorkflowError, WorktreeResult, clone_file,
+};
 use serde::Serialize;
 use std::{
     fs, io,
@@ -26,11 +28,15 @@ impl DoctorReport {
 }
 
 pub fn inspect_path(path: &Path) -> WorktreeResult<DoctorReport> {
-    let path = path.canonicalize().map_err(|_| WorkflowError::InvalidRequest {
-        reason: "doctor requires an existing directory",
+    let path = path.canonicalize().map_err(|error| match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            WorkflowError::InvalidRequest { reason: RequestIssue::ProbeDirectory }
+        }
+        _ => WorkflowError::io(path, error),
     })?;
-    if !path.is_dir() {
-        return Err(WorkflowError::InvalidRequest { reason: "doctor requires a directory" });
+    let metadata = fs::metadata(&path).map_err(|error| WorkflowError::io(&path, error))?;
+    if !metadata.is_dir() {
+        return Err(WorkflowError::InvalidRequest { reason: RequestIssue::ProbeDirectory });
     }
     let directory = tempfile::Builder::new()
         .prefix(".cowtree-probe-")
@@ -60,10 +66,7 @@ pub fn inspect_path(path: &Path) -> WorktreeResult<DoctorReport> {
             reason: Some("platform lacks a native clone implementation".into()),
         }),
         Err(WorkflowError::Native(Error::Io { source, .. }))
-            if matches!(
-                source.kind(),
-                io::ErrorKind::Unsupported | io::ErrorKind::CrossesDevices
-            ) =>
+            if crate::error::clone_unavailable(&source) =>
         {
             Ok(DoctorReport {
                 path,
@@ -86,17 +89,15 @@ fn probe(directory: &Path) -> WorktreeResult<()> {
         || same_file::is_same_file(&source, &target)
             .map_err(|error| WorkflowError::io(&target, error))?
     {
-        return Err(WorkflowError::InvalidRequest {
-            reason: "native clone failed content or identity verification",
-        });
+        return Err(WorkflowError::ProbeFailed { invariant: ProbeInvariant::ClonedContents });
     }
     fs::write(&target, b"target edit").map_err(|error| WorkflowError::io(&target, error))?;
     if fs::read(&source).map_err(|error| WorkflowError::io(&source, error))? != b"cowtree probe\n" {
-        return Err(WorkflowError::InvalidRequest { reason: "native clone modified its source" });
+        return Err(WorkflowError::ProbeFailed { invariant: ProbeInvariant::SourceIsolation });
     }
     fs::write(&source, b"source edit").map_err(|error| WorkflowError::io(&source, error))?;
     if fs::read(&target).map_err(|error| WorkflowError::io(&target, error))? != b"target edit" {
-        return Err(WorkflowError::InvalidRequest { reason: "source write modified its clone" });
+        return Err(WorkflowError::ProbeFailed { invariant: ProbeInvariant::TargetIsolation });
     }
     Ok(())
 }

@@ -67,8 +67,8 @@ impl Error {
             Self::Hardlink { .. } | Self::UnsupportedFile { .. } => "unsupported_mode",
             Self::UnsupportedPlatform => "cow_unavailable",
             Self::Cleanup { .. } => "cleanup_failed",
+            Self::Io { source, .. } if clone_unavailable(source) => "cow_unavailable",
             Self::Io { source, .. } => match source.kind() {
-                io::ErrorKind::Unsupported | io::ErrorKind::CrossesDevices => "cow_unavailable",
                 io::ErrorKind::NotFound
                 | io::ErrorKind::AlreadyExists
                 | io::ErrorKind::InvalidInput => "invalid_arguments",
@@ -79,5 +79,36 @@ impl Error {
 
     pub(crate) fn io(operation: Operation, path: &std::path::Path, source: io::Error) -> Self {
         Self::Io { operation, path: path.to_path_buf(), source }
+    }
+}
+
+#[must_use]
+pub(crate) fn clone_unavailable(error: &io::Error) -> bool {
+    if matches!(error.kind(), io::ErrorKind::Unsupported | io::ErrorKind::CrossesDevices) {
+        return true;
+    }
+    #[cfg(unix)]
+    if error.raw_os_error() == Some(rustix::io::Errno::NOTTY.raw_os_error()) {
+        return true;
+    }
+    false
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejected_clone_ioctl_is_unavailable_not_an_operational_failure() {
+        for errno in [rustix::io::Errno::NOTTY, rustix::io::Errno::OPNOTSUPP] {
+            let error = Error::io(Operation::Clone, std::path::Path::new("target"), errno.into());
+            assert_eq!(error.code(), "cow_unavailable");
+        }
+        let denied = Error::io(
+            Operation::Clone,
+            std::path::Path::new("target"),
+            rustix::io::Errno::ACCESS.into(),
+        );
+        assert_eq!(denied.code(), "command_failed");
     }
 }

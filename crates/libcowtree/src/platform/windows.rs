@@ -40,20 +40,20 @@ pub(crate) fn clone(source: &File, target: &Path, metadata: &Metadata) -> Result
             io::Error::new(io::ErrorKind::InvalidInput, "destination has no parent"),
         )
     })?;
-    let directory = File::options()
-        .read(true)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-        .open(parent)
-        .map_err(|error| Error::io(Operation::Open, parent, error))?;
-    let volume = volume(source).map_err(|error| Error::io(Operation::Inspect, target, error))?;
-    if volume
-        != self::volume(&directory).map_err(|error| Error::io(Operation::Inspect, parent, error))?
-    {
+    let directory = directory(parent).map_err(|error| Error::io(Operation::Open, parent, error))?;
+    let source_volume =
+        volume(source).map_err(|error| Error::io(Operation::Inspect, target, error))?;
+    let target_volume =
+        volume(&directory).map_err(|error| Error::io(Operation::Inspect, parent, error))?;
+    if source_volume.serial != target_volume.serial {
         return Err(Error::io(
             Operation::Clone,
             target,
             io::Error::from(io::ErrorKind::CrossesDevices),
         ));
+    }
+    if !source_volume.supports_clone || !target_volume.supports_clone {
+        return Err(Error::io(Operation::Clone, target, io::ErrorKind::Unsupported.into()));
     }
     let output = File::options()
         .read(true)
@@ -71,7 +71,20 @@ pub(crate) fn clone(source: &File, target: &Path, metadata: &Metadata) -> Result
     result.map_err(|error| cleanup(target, error))
 }
 
-fn volume(file: &File) -> io::Result<u32> {
+pub(crate) fn same_volume(source: &Path, target: &Path) -> io::Result<bool> {
+    Ok(volume(&directory(source)?)?.serial == volume(&directory(target)?)?.serial)
+}
+
+fn directory(path: &Path) -> io::Result<File> {
+    File::options().read(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS).open(path)
+}
+
+struct Volume {
+    serial: u32,
+    supports_clone: bool,
+}
+
+fn volume(file: &File) -> io::Result<Volume> {
     let mut serial = 0;
     let mut flags = 0;
     // SAFETY: the file owns the handle and both output integers live through the call.
@@ -91,10 +104,7 @@ fn volume(file: &File) -> io::Result<u32> {
     if success == 0 {
         return Err(io::Error::last_os_error());
     }
-    if flags & FILE_SUPPORTS_BLOCK_REFCOUNTING == 0 {
-        return Err(io::Error::from(io::ErrorKind::Unsupported));
-    }
-    Ok(serial)
+    Ok(Volume { serial, supports_clone: flags & FILE_SUPPORTS_BLOCK_REFCOUNTING != 0 })
 }
 
 fn extents(source: &File, target: &File, size: u64) -> io::Result<()> {

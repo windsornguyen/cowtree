@@ -8,7 +8,7 @@
 //! owned registration before conditionally deleting the ref and empty parents.
 
 use crate::{
-    AddRequest, Branch, Lock, SourceMode, Worktree, WorktreeError as Error,
+    AddRequest, Branch, Lock, RequestIssue, SourceMode, Worktree, WorktreeError as Error,
     WorktreeResult as Result,
     git::{Git, Snapshot},
     inspect_path, populate_tracked,
@@ -50,22 +50,18 @@ impl PreparedAdd {
 
 fn validate(request: &AddRequest) -> Result<()> {
     if request.path.as_os_str().is_empty() || request.revision.is_empty() {
-        return Err(Error::InvalidRequest { reason: "path and revision must be nonempty" });
+        return Err(Error::InvalidRequest { reason: RequestIssue::EmptyInput });
     }
     if let Lock::Retain { reason: Some(reason) } = &request.lock {
         if reason.is_empty() || reason.contains('\0') {
-            return Err(Error::InvalidRequest {
-                reason: "lock reason must be nonempty and contain no NUL",
-            });
+            return Err(Error::InvalidRequest { reason: RequestIssue::InvalidReason });
         }
     }
     if matches!(request.branch, Branch::Existing(_))
         && request.source_mode == SourceMode::Committed
         && request.revision != "HEAD"
     {
-        return Err(Error::InvalidRequest {
-            reason: "existing branch selects the committed revision",
-        });
+        return Err(Error::InvalidRequest { reason: RequestIssue::BranchSelectsRevision });
     }
     Ok(())
 }
@@ -97,11 +93,11 @@ fn resolve_target(path: &Path) -> Result<PathBuf> {
         missing.push(
             ancestor
                 .file_name()
-                .ok_or(Error::InvalidRequest { reason: "invalid destination component" })?,
+                .ok_or(Error::InvalidRequest { reason: RequestIssue::InvalidDestination })?,
         );
         ancestor = ancestor
             .parent()
-            .ok_or(Error::InvalidRequest { reason: "destination has no existing ancestor" })?;
+            .ok_or(Error::InvalidRequest { reason: RequestIssue::InvalidDestination })?;
     }
     let mut resolved = ancestor.canonicalize().map_err(|error| Error::io(ancestor, error))?;
     for name in missing.into_iter().rev() {
@@ -118,9 +114,14 @@ fn check_branch(repository: &Git, request: &AddRequest, snapshot: &Snapshot) -> 
     let checked = repository
         .capture(repository.command().args(["check-ref-format", "--branch"]).arg(branch))?;
     let literal =
-        branch.to_str().ok_or(Error::InvalidRequest { reason: "branch must be UTF-8" })?;
+        branch.to_str().ok_or(Error::InvalidRequest { reason: RequestIssue::InvalidBranch })?;
     if checked != format!("{literal}\n").as_bytes() {
-        return Err(Error::InvalidRequest { reason: "branch must be a literal local name" });
+        return Err(Error::InvalidRequest { reason: RequestIssue::InvalidBranch });
+    }
+    match (&request.branch, repository.has_branch(branch)?) {
+        (Branch::New(_), true) => return Err(Error::BranchExists { name: branch.clone() }),
+        (Branch::Existing(_), false) => return Err(Error::BranchMissing { name: branch.clone() }),
+        _ => {}
     }
     if matches!(request.branch, Branch::Existing(_))
         && repository.resolve(&qualified(branch))? != snapshot.commit
@@ -227,26 +228,21 @@ impl<'a> Creation<'a> {
         let mut parent = self
             .target
             .parent()
-            .ok_or(Error::InvalidRequest { reason: "destination requires a parent" })?;
+            .ok_or(Error::InvalidRequest { reason: RequestIssue::InvalidDestination })?;
         while !parent.exists() {
             missing.push(parent.to_path_buf());
-            parent = parent.parent().ok_or(Error::InvalidRequest {
-                reason: "destination requires an existing ancestor",
-            })?;
+            parent = parent
+                .parent()
+                .ok_or(Error::InvalidRequest { reason: RequestIssue::InvalidDestination })?;
         }
-        #[cfg(unix)]
+        if !crate::platform::same_volume(&self.repository.root, parent)
+            .map_err(|error| Error::io(parent, error))?
         {
-            use std::os::unix::fs::MetadataExt;
-            let source = fs::metadata(&self.repository.root)
-                .map_err(|error| Error::io(&self.repository.root, error))?;
-            let destination = fs::metadata(parent).map_err(|error| Error::io(parent, error))?;
-            if source.dev() != destination.dev() {
-                return Err(Error::Native(crate::Error::io(
-                    crate::Operation::Clone,
-                    &self.target,
-                    std::io::ErrorKind::CrossesDevices.into(),
-                )));
-            }
+            return Err(Error::Native(crate::Error::io(
+                crate::Operation::Clone,
+                &self.target,
+                std::io::ErrorKind::CrossesDevices.into(),
+            )));
         }
         let report = inspect_path(parent)?;
         if !report.supported() {
@@ -355,7 +351,7 @@ fn committed(repository: &Git, request: &AddRequest) -> Result<Worktree> {
     let parent = repository
         .root
         .parent()
-        .ok_or(Error::InvalidRequest { reason: "source requires a parent" })?;
+        .ok_or(Error::InvalidRequest { reason: RequestIssue::SourceParent })?;
     let directory = tempfile::Builder::new()
         .prefix(".cowtree-seed-")
         .tempdir_in(parent)

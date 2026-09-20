@@ -24,6 +24,30 @@ pub enum Lock {
     Retain { reason: Option<String> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum RequestIssue {
+    #[error("path and revision must be nonempty")]
+    EmptyInput,
+    #[error("lock reason must be nonempty and contain no NUL")]
+    InvalidReason,
+    #[error("existing branch selects the committed revision")]
+    BranchSelectsRevision,
+    #[error("destination requires a valid name and an existing ancestor")]
+    InvalidDestination,
+    #[error("branch must be a literal UTF-8 local name")]
+    InvalidBranch,
+    #[error("source requires a parent")]
+    SourceParent,
+    #[error("branch modes are mutually exclusive")]
+    BranchConflict,
+    #[error("invalid source mode")]
+    SourceMode,
+    #[error("reason requires lock")]
+    ReasonWithoutLock,
+    #[error("doctor requires an existing directory")]
+    ProbeDirectory,
+}
+
 #[derive(Debug, Clone)]
 pub struct AddRequest {
     pub cancellation: crate::Cancellation,

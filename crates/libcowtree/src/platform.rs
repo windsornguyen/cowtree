@@ -16,6 +16,18 @@ mod native;
 #[cfg(any(target_os = "linux", target_os = "macos", windows))]
 pub(crate) use native::clone;
 
+#[cfg(windows)]
+pub(crate) use native::same_volume;
+
+#[cfg(unix)]
+pub(crate) fn same_volume(
+    source: &std::path::Path,
+    target: &std::path::Path,
+) -> std::io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(std::fs::metadata(source)?.dev() == std::fs::metadata(target)?.dev())
+}
+
 #[cfg(unix)]
 pub(crate) fn open_source(path: &std::path::Path) -> std::io::Result<std::fs::File> {
     rustix::fs::open(
