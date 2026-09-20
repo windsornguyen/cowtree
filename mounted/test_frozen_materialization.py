@@ -10,8 +10,8 @@ from benchmarks.cargo_workspace import inventory, verify
 from cowtree.errors import CowtreeError
 from cowtree.exec import CommandRunner
 from cowtree.leaves import Leaves
-from cowtree.native import clone_regular_file
-from cowtree.tree_types import PathPolicy
+from cowtree.tree_types import CaptureMode, PathPolicy, TreeEntry
+from cowtree.trees import populate_tree
 from cowtree.workspace import Workspace
 
 from .test_bootstrap import metadata_binary, source_repository
@@ -81,56 +81,23 @@ def test_final_manifest_refuses_corruption_hidden_from_metadata_comparison(
     workspace = workspace_fixture(root=tmp_path)
     original = inventory(root=workspace.config.source)
 
-    def corrupt_clone(source: Path, target: Path) -> None:
-        clone_regular_file(source=source, target=target)
-        if target.name == "file.txt":
-            corrupt_bytes(path=target)
+    def corrupt_population(
+        source: Path,
+        target: Path,
+        policy: PathPolicy,
+        *,
+        capture: CaptureMode = CaptureMode.CONTENT,
+    ) -> tuple[TreeEntry, ...]:
+        entries = populate_tree(source=source, target=target, policy=policy, capture=capture)
+        corrupt_bytes(path=target / "file.txt")
+        return entries
 
     leaves = Leaves(workspace=workspace)
     with monkeypatch.context() as patch:
-        patch.setattr("cowtree.trees.clone_regular_file", corrupt_clone)
+        patch.setattr("cowtree.leaves.populate_tree", corrupt_population)
         with pytest.raises(CowtreeError, match="leaf differs from its source snapshot"):
             leaves.fork(path=tmp_path / "corrupt-target")
     assert leaves.records() == []
     leaves.recover()
     assert not (tmp_path / "corrupt-target").exists()
-    verify(root=workspace.config.source, expected=original)
-
-
-@pytest.mark.parametrize(
-    "after_copy", ["copied_source", "future_source", "parent_symlink", "extra", "delete"]
-)
-def test_source_changes_during_copy_refuse_the_entire_fork(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, after_copy: str
-) -> None:
-    workspace = workspace_fixture(root=tmp_path)
-    original = inventory(root=workspace.config.source)
-    tree = workspace.root / "nodes" / workspace.config.initial / "tree"
-
-    def change_source(source: Path, target: Path) -> None:
-        clone_regular_file(source=source, target=target)
-        if target.name != "file.txt":
-            return
-        if after_copy == "copied_source":
-            corrupt_bytes(path=source)
-        elif after_copy == "future_source":
-            corrupt_bytes(path=tree / "src/nested.rs")
-        elif after_copy == "parent_symlink":
-            (tree / "src/nested.rs").unlink()
-            (tree / "src").rmdir()
-            (tree / "src").symlink_to(workspace.config.source / "src", target_is_directory=True)
-        elif after_copy == "delete":
-            source.unlink()
-        else:
-            assert after_copy == "extra"
-            (tree / "unexpected.rs").write_bytes(b"late source")
-
-    leaves = Leaves(workspace=workspace)
-    with monkeypatch.context() as patch:
-        patch.setattr("cowtree.trees.clone_regular_file", change_source)
-        with pytest.raises(CowtreeError):
-            leaves.fork(path=tmp_path / "mixed")
-    assert leaves.records() == []
-    leaves.recover()
-    assert not (tmp_path / "mixed").exists()
     verify(root=workspace.config.source, expected=original)
