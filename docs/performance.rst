@@ -1,6 +1,10 @@
 Workspace performance
 =====================
 
+The `Cargo cache comparison <cache.rst>`_ measures complete warm-workspace
+creation and builds against Git and a shared compiler cache, plus physical APFS
+allocation for inherited compiled targets.
+
 Scope
 -----
 
