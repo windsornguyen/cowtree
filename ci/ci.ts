@@ -49,12 +49,18 @@ export const ci = workflow(
       test: job({
         name: "Test",
         "runs-on": python.os,
+        // Override the local development pin for both sync and run.
+        env: { UV_PYTHON: python["python-version"] },
         strategy: { "fail-fast": false, matrix: python },
         steps: [
           checkout,
           uv,
           run("Install Python", "uv", ["python", "install", python["python-version"]]),
           run("Install dependencies", "uv", ["sync", "--locked", "--group", "test"]),
+          run("Verify selected Python", "uv", [
+            "run", "python", "-c",
+            "import os, sys; actual = f'{sys.version_info.major}.{sys.version_info.minor}'; print(sys.version); assert actual == os.environ['UV_PYTHON'], actual",
+          ]),
           run("Run tests", "uv", ["run", "pytest"]),
         ],
       }),

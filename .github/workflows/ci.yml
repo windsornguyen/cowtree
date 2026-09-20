@@ -51,6 +51,8 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +78,9 @@ jobs:
           HOLLYWOOD_COMMAND_ARG_2: ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv sync --locked --group test
+        shell: bash
+      - name: Verify selected Python
+        run: uv run python -c 'import os, sys; actual = f'"'"'{sys.version_info.major}.{sys.version_info.minor}'"'"'; print(sys.version); assert actual == os.environ['"'"'UV_PYTHON'"'"'], actual'
         shell: bash
       - name: Run tests
         run: uv run pytest
