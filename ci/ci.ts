@@ -16,7 +16,7 @@ const atlasPath = expr<string>("format('{0}/.tools/atlas', github.workspace)");
 export const ci = workflow(
   {
     name: "CI",
-    on: { push: { branches: ["main"] }, pull_request: {} },
+    on: { push: { branches: ["main"] }, pull_request: {}, workflow_dispatch: {} },
     permissions: { contents: "read" },
     env: { RUSTUP_TOOLCHAIN: "1.97.1" },
     jobs: {
