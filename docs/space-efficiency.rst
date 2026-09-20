@@ -6,6 +6,20 @@ additional-worktree allocation. It did not support a universal 99 percent
 physical-space claim. These are observations from a specific earlier Cowtree
 revision, not a qualification of every later release.
 
+Recorded figure
+---------------
+
+The four-worktree figure below is the original recorded observation. Its URL
+is pinned to the archive commit, not to the current runtime. The two panels
+separate additional-worktree allocation from total source-plus-fleet allocation.
+
+.. image:: https://raw.githubusercontent.com/windsornguyen/cowtree/cf8fef1b390e8a12ab3e81ee3aeabeee07e0184e/benchmarks/results/apfs-linux-2026-09-15/fleet/space-savings.png
+   :alt: Git and cowtree allocated GiB for four extra worktrees, before and after edits.
+
+`Recorded measurements and report <https://github.com/windsornguyen/cowtree/tree/cf8fef1b390e8a12ab3e81ee3aeabeee07e0184e/benchmarks/results/apfs-linux-2026-09-15/fleet>`_
+include the source revision, paired operation results, and allocation samples.
+Generated results remain outside the current source tree.
+
 Method
 ------
 
@@ -92,10 +106,10 @@ Full byte, mode, symlink, and path inventories were checked before editing and
 after final churn. Intermediate checks covered every edited file and roughly
 128 clean paths per leaf, Git HEAD, dirty paths, and exact worktree registration.
 Both methods had to produce equal operation results and state digests. Two churn
-rounds removed and recreated selected leaves; one directory was deleted externally
+rounds removed and recreated selected leaves. One directory was deleted externally
 before API cleanup. The source was checked again after all leaves were removed.
 
-The one-leaf run completed 1,816 operations per method; the four-leaf run completed
+The one-leaf run completed 1,816 operations per method. The four-leaf run completed
 7,226. Its final inventory hashed 433,400 file entries and checked 4,182 changed
 leaf files. Registrations and leaf directories were absent after cleanup, and
 source hashes remained unchanged.
@@ -109,10 +123,23 @@ on file sizes, editor write behavior, and the amount of divergence.
 Reproduction
 ------------
 
+To regenerate the figure from the recorded data, run from a checkout containing
+the archive commit below. This redraws an old observation. It does not rerun the
+benchmark or measure current code::
+
+    evidence=$(mktemp -d)
+    git archive cf8fef1b390e8a12ab3e81ee3aeabeee07e0184e \
+        benchmarks/results/apfs-linux-2026-09-15/fleet | tar -x -C "$evidence"
+    uv run --group bench python -m benchmarks.space_report \
+        "$evidence/benchmarks/results/apfs-linux-2026-09-15/fleet" \
+        --output "$evidence/plots"
+
+Open ``$evidence/plots/space-savings.png`` or ``$evidence/plots/report.md``.
+
 Follow the `APFS benchmark procedure <../benchmarks/README.rst#physical-apfs-allocation>`_
 to obtain the pinned source, run identical seeded histories, and generate a report
 outside the checkout. Use three paired trials with alternating method order for
 a new comparison. The observations above used ``--trials 1`` explicitly.
-Retain raw measurements and checksums as separate artifacts; commit changes to
+Retain raw measurements and checksums as separate artifacts. Commit changes to
 the methodology and reviewed conclusions. Repeat qualification for the release
 and deployment being considered.
