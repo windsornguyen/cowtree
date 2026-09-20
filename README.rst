@@ -58,7 +58,14 @@ unknown options are rejected.
 
 ``list`` accepts a source checkout or defaults to the current repository.
 Use ``--json`` for machine-readable output, including paths containing line
-breaks. ``remove`` operates in the current repository and preserves branches.
+breaks. ``add``, ``doctor``, and ``remove`` also accept ``--json``: successes
+contain ``status: "ok"``, ``kind``, and ``value``. Add returns the registered
+worktree, doctor returns its probe report, and remove returns null. An unsupported
+doctor probe has a null clone tool and still exits 1. Structured failures emit
+one ``status: "error"``, ``code``, and ``message`` record on stderr; invalid
+syntax exits 2. ``list --json`` retains its existing array format.
+
+``remove`` operates in the current repository and preserves branches.
 ``--force`` permits removal of a dirty worktree, but does not override a worktree
 lock. Unlock it with ``git worktree unlock PATH`` first. ``doctor`` probes an
 existing directory and defaults to the current directory.
