@@ -95,7 +95,11 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
   const calls: { file: string; args: readonly string[] }[] = [];
   const exec: ScriptExec = async (file, args) => {
     calls.push({ file, args });
-    return { exitCode: 0, stdout: "", stderr: "" };
+    return {
+      exitCode: 0,
+      stdout: file === "rustup" && args[0] === "which" ? "/rust/toolchain/bin/cargo\n" : "",
+      stderr: "",
+    };
   };
   await checkFilesystems(exec, "/installed uv:/usr/bin");
   assert.deepEqual(calls, [
@@ -103,7 +107,11 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
     { file: "sudo", args: ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"] },
     { file: "rustup", args: ["toolchain", "install", "1.97.1", "--profile", "minimal"] },
     { file: "cargo", args: ["+1.97.1", "build", "--locked", "-p", "cowtree-metadata"] },
-    { file: "sudo", args: ["env", "PATH=/installed uv:/usr/bin", "bash", "scripts/fs_matrix.sh"] },
+    { file: "rustup", args: ["which", "--toolchain", "1.97.1", "cargo"] },
+    {
+      file: "sudo",
+      args: ["env", "PATH=/rust/toolchain/bin:/installed uv:/usr/bin", "bash", "scripts/fs_matrix.sh"],
+    },
   ]);
   await assert.rejects(checkFilesystems(exec, undefined), /PATH is required/);
   let attempts = 0;
