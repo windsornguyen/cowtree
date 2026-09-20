@@ -117,6 +117,13 @@ fn populate_with(
     {
         return Err(Error::SourceChanged { path: source.into() });
     }
+    for entry in &entries {
+        if entry.classification == crate::PathClass::Derived {
+            if let Some(link) = &entry.link {
+                crate::tree_links::validate(target, &entry.path, link, policy)?;
+            }
+        }
+    }
     for entry in entries.iter().rev().filter(|entry| entry.kind == TreeKind::Directory) {
         let directory = target.join(&entry.path);
         fs::set_permissions(&directory, fs::Permissions::from_mode(entry.mode))

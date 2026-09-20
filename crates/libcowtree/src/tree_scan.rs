@@ -80,6 +80,9 @@ pub(crate) fn capture_entry(
     } else if before.is_symlink() {
         let text = fs::read_link(&source)
             .map_err(|error| Error::io(Operation::ReadLink, &source, error))?;
+        if classification == PathClass::Derived {
+            crate::tree_links::validate(root, path, &text, policy)?;
+        }
         digest = Some(hex::encode(Sha256::digest(text.as_os_str().as_encoded_bytes())));
         link = Some(text);
         TreeKind::Symlink

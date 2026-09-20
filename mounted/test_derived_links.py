@@ -13,9 +13,12 @@ from cowtree.workspace import Workspace
 from .test_bootstrap import metadata_binary, source_repository
 
 
-@pytest.mark.parametrize("kind", ["absolute", "relative", "nested", "internal-absolute", "cycle"])
+@pytest.mark.parametrize(
+    "kind", ["absolute", "relative", "nested", "internal-absolute", "cycle", "source-bridge"]
+)
 def test_external_cache_aliases_are_rejected_before_a_workspace_is_published(
-    tmp_path: Path, kind: Literal["absolute", "relative", "nested", "internal-absolute", "cycle"]
+    tmp_path: Path,
+    kind: Literal["absolute", "relative", "nested", "internal-absolute", "cycle", "source-bridge"],
 ) -> None:
     source = source_repository(tmp_path / "source")
     external = tmp_path / "external"
@@ -28,6 +31,9 @@ def test_external_cache_aliases_are_rejected_before_a_workspace_is_published(
         (cache / "alias").symlink_to(cache / "artifact")
     elif kind == "cycle":
         (cache / "alias").symlink_to("alias")
+    elif kind == "source-bridge":
+        (source / "bridge").symlink_to(cache)
+        (cache / "alias").symlink_to("../bridge/artifact")
     else:
         (cache / "artifact").unlink()
         cache.rmdir()
@@ -60,3 +66,21 @@ def test_relative_cache_aliases_preserve_seed_and_sibling_bytes(tmp_path: Path) 
     assert (first.path / "cache/artifact").read_text() == "changed"
     assert (source / "cache/artifact").read_bytes() == b"warm build"
     assert (second.path / "cache/alias").read_bytes() == b"warm build"
+
+
+def test_dangling_relative_cache_chains_remain_private(tmp_path: Path) -> None:
+    source = source_repository(tmp_path / "source")
+    (source / "cache/alias").symlink_to("missing")
+    (source / "cache/chain").symlink_to("alias")
+    workspace = Workspace.create(
+        root=tmp_path / "store",
+        source=source,
+        binary=metadata_binary(),
+        policy=PathPolicy(derived=("cache",)),
+    )
+    first = Leaves(workspace).fork(tmp_path / "first")
+    second = Leaves(workspace).fork(tmp_path / "second")
+    (first.path / "cache/chain").write_text("private")
+    assert (first.path / "cache/missing").read_text() == "private"
+    assert not (source / "cache/missing").exists()
+    assert not (second.path / "cache/missing").exists()
