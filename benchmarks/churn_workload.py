@@ -4,6 +4,11 @@ Operations run to completion before the next operation starts. Directory loss is
 an external deletion followed by explicit registry cleanup, not a crash model.
 Verification hashes every tracked file in full mode; sampled mode hashes all
 edited files and a fixed sample of clean files. Neither mode compiles the source.
+
+The paired source fixture must use the same checkout permission policy as Git's
+new worktrees. Git records executable bits, while checkout applies the umask;
+the oracle deliberately compares full source permissions rather than ignoring
+differences in group or other access bits.
 """
 
 from __future__ import annotations
