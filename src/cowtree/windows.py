@@ -167,7 +167,7 @@ class Kernel:
             raise CowtreeError(CowtreeErrorCode.DIFFERENT_FILESYSTEM, "clone volumes differ")
         owned = False
         try:
-            with source.open("rb") as src, target.open("xb") as dst:
+            with source.open("rb") as src, target.open("x+b") as dst:
                 owned = True
                 source_handle = msvcrt.get_osfhandle(src.fileno())
                 target_handle = msvcrt.get_osfhandle(dst.fileno())
