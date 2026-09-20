@@ -8,7 +8,9 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 
 use crate::database::{active, entry_json, next_token, parse_entry, read_snapshot, read_tip};
 use crate::objects::ObjectStore;
-use crate::{Entry, EntryKind, Error, Grant, LeafId, LeafView, ResourcePath, Result, Store, Token};
+use crate::{
+    Entry, Error, FileKind, Grant, LeafId, LeafView, ResourcePath, Result, Snapshot, Store, Token,
+};
 
 impl Store {
     /// Read the live reservation table from one consistent metadata snapshot.
@@ -46,6 +48,7 @@ impl Store {
         active(&tx, leaf)?;
         let (_, root) = read_tip(&tx)?;
         let snapshot = read_snapshot(&self.objects, &root)?;
+        writable_paths(&snapshot, paths)?;
         let mut grants = Vec::with_capacity(paths.len());
         for path in paths {
             exclude_other_holders(&tx, leaf, path)?;
@@ -321,6 +324,9 @@ fn validate_edit_object(
     view: &LeafView,
     entry: &Entry,
 ) -> Result<()> {
+    if let Some(scope) = entry.kind.read_only_scope() {
+        return Err(Error::ReadOnlyPath { path: grant.path.clone(), scope: scope.clone() });
+    }
     let already_owned = view.value.as_ref().is_some_and(|value| value.object == entry.object)
         || view.origin.as_ref().is_some_and(|origin| origin.object == entry.object);
     if !already_owned {
@@ -336,10 +342,23 @@ fn validate_edit_object(
         }
     }
     let bytes = objects.read(&entry.object)?;
-    if entry.kind == EntryKind::Symlink
+    if entry.kind.file_kind() == FileKind::Symlink
         && (bytes.is_empty() || bytes.contains(&0) || std::str::from_utf8(&bytes).is_err())
     {
         return Err(Error::InvalidSymlink(grant.path.as_str().to_owned()));
+    }
+    Ok(())
+}
+
+fn writable_paths(snapshot: &Snapshot, paths: &BTreeSet<ResourcePath>) -> Result<()> {
+    let scopes: BTreeSet<_> =
+        snapshot.values().filter_map(|entry| entry.kind.read_only_scope()).collect();
+    for path in paths {
+        for scope in &scopes {
+            if scope.overlaps(path) {
+                return Err(Error::ReadOnlyPath { path: path.clone(), scope: (*scope).clone() });
+            }
+        }
     }
     Ok(())
 }

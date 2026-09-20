@@ -14,7 +14,7 @@ use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, stat
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Entry, EntryKind, Error, LimitKind, ResourcePath, Result, Snapshot, Store, objects::ObjectId,
+    Entry, Error, FileKind, LimitKind, ResourcePath, Result, Snapshot, Store, objects::ObjectId,
     publication::validate_namespace,
 };
 
@@ -281,7 +281,7 @@ fn read_entry(
     let io_error = |source: std::io::Error| Error::Io { path: absolute.into(), source };
     let stat =
         statat(parent, name, AtFlags::SYMLINK_NOFOLLOW).map_err(|error| io_error(error.into()))?;
-    if entry.kind == EntryKind::Symlink {
+    if entry.kind.file_kind() == FileKind::Symlink {
         if FileType::from_raw_mode(stat.st_mode) != FileType::Symlink {
             return Err(Error::ImportSourceChanged(absolute.to_string_lossy().into_owned()));
         }
@@ -304,7 +304,7 @@ fn read_entry(
     let executable = metadata.mode() & 0o100 != 0;
     if !metadata.is_file()
         || metadata.nlink() != 1
-        || executable != (entry.kind == EntryKind::Executable)
+        || executable != (entry.kind.file_kind() == FileKind::Executable)
     {
         return Err(Error::ImportSourceChanged(absolute.to_string_lossy().into_owned()));
     }
@@ -338,7 +338,7 @@ fn read_entry(
 }
 
 fn validate_symlink(path: &ResourcePath, entry: &Entry, bytes: &[u8]) -> Result<()> {
-    if entry.kind == EntryKind::Symlink
+    if entry.kind.file_kind() == FileKind::Symlink
         && (bytes.is_empty() || bytes.contains(&0) || std::str::from_utf8(bytes).is_err())
     {
         return Err(Error::InvalidSymlink(path.as_str().into()));
