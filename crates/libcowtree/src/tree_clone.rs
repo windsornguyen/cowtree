@@ -42,47 +42,8 @@ fn clone_with(
 }
 
 #[cfg(all(test, unix))]
-mod tests {
-    use super::clone_with;
-    use crate::{Error, Operation, TreePolicy};
-    use std::{error::Error as StdError, fs, path::Path};
-
-    fn corrupt(source: &Path, target: &Path) -> crate::Result<()> {
-        crate::clone_file(source, target)?;
-        let metadata =
-            fs::metadata(target).map_err(|error| Error::io(Operation::Inspect, target, error))?;
-        fs::write(target, b"changed\n")
-            .map_err(|error| Error::io(Operation::Clone, target, error))?;
-        let output =
-            fs::File::open(target).map_err(|error| Error::io(Operation::Open, target, error))?;
-        let times = fs::FileTimes::new().set_modified(
-            metadata.modified().map_err(|error| Error::io(Operation::Inspect, target, error))?,
-        );
-        output.set_times(times).map_err(|error| Error::io(Operation::Metadata, target, error))?;
-        Ok(())
-    }
-
-    #[test]
-    fn corrupted_clone_never_becomes_a_completed_tree() -> Result<(), Box<dyn StdError>> {
-        let directory = tempfile::tempdir()?;
-        let report = crate::inspect_path(directory.path())?;
-        if std::env::var_os("COWTREE_EXPECT_SUPPORTED").is_some_and(|value| value == "1") {
-            assert!(report.supported());
-        }
-        if !report.supported() {
-            return Ok(());
-        }
-        let source = directory.path().join("source");
-        let target = directory.path().join("target");
-        fs::create_dir(&source)?;
-        fs::write(source.join("file"), b"original")?;
-        let result = clone_with(&source, &target, &TreePolicy::default(), corrupt);
-        assert!(matches!(result, Err(Error::SourceChanged { .. })));
-        assert!(!target.exists());
-        assert_eq!(fs::read(source.join("file"))?, b"original");
-        Ok(())
-    }
-}
+#[path = "tree_clone_tests.rs"]
+mod tests;
 
 #[cfg(not(unix))]
 pub fn clone_tree(_source: &Path, _target: &Path, _policy: &TreePolicy) -> Result<Vec<TreeEntry>> {
