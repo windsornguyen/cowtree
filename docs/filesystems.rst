@@ -26,6 +26,13 @@ Required matrix
 | Linux ext4           | unsupported      | add refuses     |
 +----------------------+------------------+-----------------+
 
+Windows ReFS volumes advertising block refcounting use
+``FSCTL_DUPLICATE_EXTENTS_TO_FILE`` and support standalone add. Windows volumes
+without that capability, including the NTFS CI fixture, refuse cloning. Managed
+Windows workspaces remain unsupported; see
+`the Windows qualification <windows-native.rst>`_ and
+`managed portability follow-up <https://github.com/windsornguyen/cowtree/issues/26>`_.
+
 Integration suite
 -----------------
 
@@ -83,3 +90,17 @@ A green APFS run does not establish Linux support. Record the operating system,
 filesystem configuration, revision and test result for each environment that
 actually ran. Allocation measurements require a separate workload and physical
 extent accounting appropriate to that filesystem.
+
+Windows qualification
+---------------------
+
+CI provisions an owned 8 GiB expandable ReFS disk on Windows Server 2025 and
+runs ``windows/`` plus the installed ``cowtree doctor`` entry point. The suite
+checks file and directory symlinks (including dangling directory links), Git
+executable-mode records, concurrent operations, cancellation cleanup, and
+cross-volume refusal. No managed-lifecycle support is inferred from these tests.
+
+On an existing ReFS volume, set ``COWTREE_NTFS_TEST`` to a new disposable directory
+on NTFS, then run ``uv run --group test pytest -q windows --basetemp R:\cowtree-tests``.
+Pytest removes its basetemp directory. The general ``src``/``tests`` and managed
+suites currently target POSIX; Windows contributors should use this dedicated suite.
