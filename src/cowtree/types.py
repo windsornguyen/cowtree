@@ -16,6 +16,13 @@ from cowtree.errors import CowtreeError, CowtreeErrorCode
 # --- Command inputs ---
 
 
+class SourceMode(str, Enum):
+    """Choose working-checkout bytes or an explicitly materialized Git commit."""
+
+    CHECKOUT = "checkout"
+    COMMIT = "commit"
+
+
 class Command(str, Enum):
     """Supported command-line operations."""
 
@@ -40,6 +47,7 @@ class Arguments(argparse.Namespace):
     reason: str | None = None
     json: bool = False
     force: bool = False
+    source_mode: SourceMode = SourceMode.CHECKOUT
 
 
 # --- Filesystem records ---
@@ -109,9 +117,14 @@ class WorktreeAddRequest:
     lock: bool = False
     reason: str | None = None
     existing_branch: str | None = None
+    source_mode: SourceMode = SourceMode.CHECKOUT
 
     def __post_init__(self) -> None:
         """Reject invalid input fields before starting any filesystem operation."""
+        if not isinstance(self.source_mode, SourceMode):
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, "source_mode must be a SourceMode"
+            )
         for name, path in (("path", self.path), ("source", self.source)):
             if path is None and name == "source":
                 continue
@@ -150,6 +163,10 @@ class WorktreeAddRequest:
                 raise CowtreeError(
                     code=CowtreeErrorCode.INVALID_ARGUMENTS, message=f"{name} must be a boolean"
                 )
+        self.validate_policy()
+
+    def validate_policy(self) -> None:
+        """Reject contradictory branch and lock policies."""
         if self.branch is not None and self.detach:
             raise CowtreeError(
                 code=CowtreeErrorCode.INVALID_ARGUMENTS,

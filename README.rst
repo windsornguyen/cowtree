@@ -58,6 +58,22 @@ elsewhere. The Python equivalent is ``WorktreeAddRequest(existing_branch=...)``.
 Neither failed creation nor removal deletes an existing branch. Index creation
 never resets its reference, including when an external writer moves it.
 
+Use ``add --committed PATH REF`` to fork a committed ref even when the caller's
+checkout is dirty or at a different commit. With ``--branch``, that branch's tip
+selects the commit; omit REF. The Python request uses
+``source_mode=SourceMode.COMMIT`` from ``cowtree.types``. The default remains
+``SourceMode.CHECKOUT`` and preserves the clean-source requirement.
+
+Committed mode resolves the ref once, materializes a private Git checkout, and
+clones its files through native CoW. It never stashes or resets the caller's
+working files or index. Git applies checkout conversions in the private seed.
+The seed is removed before success, so no extra checked-out payload is retained.
+This mode pays Git checkout cost and does not provide warm-cache inheritance.
+Unsupported clone storage still fails rather than copying into the destination.
+If seed cleanup fails, inspect the named directory and ``git worktree list``:
+the destination may already be complete. Unhandled process crashes can leave the
+locked private seed behind, under the same standalone recovery limits below.
+
 Cowtree always populates tracked files through CoW and prepares a clean index.
 There is no pass-through for arbitrary Git arguments. ``-B``, ``--force`` on
 ``add``, ``--orphan``, ``--cow``, ``--no-checkout``, tracking options, and

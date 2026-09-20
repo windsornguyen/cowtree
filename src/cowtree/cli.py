@@ -17,7 +17,7 @@ from inline_tests import test
 from cowtree.cli_output import Failure, Success, json_requested
 from cowtree.core import add_worktree, inspect_path, list_all_worktrees, remove_worktree
 from cowtree.errors import CowtreeError, CowtreeErrorCode
-from cowtree.types import Arguments, Command, WorktreeAddRequest
+from cowtree.types import Arguments, Command, SourceMode, WorktreeAddRequest
 
 
 if TYPE_CHECKING:
@@ -85,6 +85,14 @@ class CowtreeCLI:
         mode.add_argument("--detach", "-d", action="store_true")
         self.add_parser.add_argument("--lock", action="store_true")
         self.add_parser.add_argument(
+            "--committed",
+            dest="source_mode",
+            action="store_const",
+            const=SourceMode.COMMIT,
+            default=SourceMode.CHECKOUT,
+            help="materialize the requested commit without including private working changes",
+        )
+        self.add_parser.add_argument(
             "--reason", metavar="TEXT", help="lock reason; requires --lock"
         )
         self.add_parser.add_argument("path", type=Path)
@@ -142,6 +150,7 @@ class CowtreeCLI:
                 path=options.path,
                 branch=options.branch,
                 existing_branch=options.existing_branch,
+                source_mode=options.source_mode,
                 commitish=options.commitish,
                 detach=options.detach,
                 lock=options.lock,

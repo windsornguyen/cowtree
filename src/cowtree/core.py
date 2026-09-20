@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import os
 from pathlib import Path
 import stat
 
+from cowtree.committed_source import CommittedSource
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
 from cowtree.fs import doctor
@@ -16,6 +17,7 @@ from cowtree.types import (
     Checkout,
     DoctorReport,
     FileMode,
+    SourceMode,
     TrackedFile,
     Worktree,
     WorktreeAddRequest,
@@ -26,14 +28,21 @@ from cowtree.types import (
 
 
 def add_worktree(request: WorktreeAddRequest, runner: CommandRunner | None = None) -> Worktree:
-    """Clone a clean source at its current commit and create the requested branch."""
+    """Clone the selected source under its explicit checkout or committed-ref policy."""
     if runner is None:
         runner = CommandRunner()
     try:
         repository = GitRepository.discover(io=runner, source=request.source)
         with repository.lock():
-            creation = WorktreeCreation.prepare(repository=repository, request=request)
-            worktree = creation.run()
+            if request.source_mode is SourceMode.COMMIT:
+                seed = CommittedSource.resolve(repository=repository, request=request)
+                with seed.open() as source:
+                    pinned = replace(request, source=source.path, commitish=seed.commit)
+                    creation = WorktreeCreation.prepare(repository=source, request=pinned)
+                    worktree = creation.run()
+            else:
+                creation = WorktreeCreation.prepare(repository=repository, request=request)
+                worktree = creation.run()
     except OSError as error:
         raise CowtreeError(
             code=CowtreeErrorCode.COMMAND_FAILED, message=f"add failed: {error}"
