@@ -1,6 +1,9 @@
 param([switch]$DevDrive)
 
 $ErrorActionPreference = "Stop"
+$temporary = $env:TEMP
+$temporaryAlternate = $env:TMP
+$originalBinary = $env:COWTREE_TEST_BINARY
 # Use only this job's new virtual disk; never format a runner's existing volume.
 $image = Join-Path $env:RUNNER_TEMP "cowtree-native.vhdx"
 $script = Join-Path $env:RUNNER_TEMP "cowtree-diskpart.txt"
@@ -30,7 +33,20 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Native Windows checks failed" }
     uv run --no-sync cowtree doctor R:\
     if ($LASTEXITCODE -ne 0) { throw "Installed standalone CLI failed" }
+    $env:TEMP = "R:\rust-tests"
+    $env:TMP = $env:TEMP
+    New-Item -ItemType Directory -Path $env:TEMP | Out-Null
+    cargo test --locked -p libcowtree
+    if ($LASTEXITCODE -ne 0) { throw "Rust engine tests failed" }
+    cargo build --locked --release -p cowtree-cli
+    if ($LASTEXITCODE -ne 0) { throw "Native CLI build failed" }
+    $env:COWTREE_TEST_BINARY = (Resolve-Path "target\release\cowtree.exe").Path
+    uv run --no-sync pytest -q windows/test_cli.py tests/test_git_extension.py --basetemp R:\native-cli -k "not managed_commands"
+    if ($LASTEXITCODE -ne 0) { throw "Native executable checks failed" }
 } finally {
+    $env:TEMP = $temporary
+    $env:TMP = $temporaryAlternate
+    $env:COWTREE_TEST_BINARY = $originalBinary
     if (Test-Path $image) {
         @(
             ('select vdisk file="{0}"' -f $image)

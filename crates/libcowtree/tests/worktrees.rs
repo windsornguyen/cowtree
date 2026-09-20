@@ -116,6 +116,23 @@ fn existing_branch_is_not_owned_by_failed_creation() -> Result<(), Box<dyn Error
 }
 
 #[test]
+fn occupied_branch_failure_does_not_fabricate_a_cleanup_failure() -> Result<(), Box<dyn Error>> {
+    let directory = tempfile::tempdir()?;
+    if !native(directory.path())? {
+        return Ok(());
+    }
+    let source = repository(directory.path())?;
+    let mut request = AddRequest::new(directory.path().join("occupied"));
+    request.source = Some(source.clone());
+    request.branch = Branch::Existing("source".into());
+    let error = add_worktree(&request).err().ok_or("occupied branch unexpectedly attached")?;
+    assert_eq!(error.code(), "command_failed");
+    assert!(!request.path.exists());
+    assert_eq!(list_worktrees(Some(&source))?.len(), 1);
+    Ok(())
+}
+
+#[test]
 fn nested_worktrees_copy_only_pinned_files() -> Result<(), Box<dyn Error>> {
     let directory = tempfile::tempdir()?;
     if !native(directory.path())? {

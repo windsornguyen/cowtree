@@ -215,7 +215,10 @@ impl<'a> Creation<'a> {
         self.request.cancellation.check()?;
         if self.request.lock == Lock::Release {
             self.repository.capture(
-                self.repository.command().args(["worktree", "unlock"]).arg(&self.target),
+                self.repository
+                    .command()
+                    .args(["worktree", "unlock"])
+                    .arg(dunce::simplified(&self.target)),
             )?;
         }
         self.repository
@@ -277,10 +280,13 @@ impl<'a> Creation<'a> {
         }
         match &self.request.branch {
             Branch::Detached => {
-                command.args(["--detach", "--"]).arg(&self.target).arg(&self.snapshot.commit);
+                command
+                    .args(["--detach", "--"])
+                    .arg(dunce::simplified(&self.target))
+                    .arg(&self.snapshot.commit);
             }
             Branch::New(branch) | Branch::Existing(branch) => {
-                command.arg("--").arg(&self.target).arg(branch);
+                command.arg("--").arg(dunce::simplified(&self.target)).arg(branch);
             }
         }
         self.repository.capture(&mut command)?;
@@ -314,10 +320,15 @@ impl<'a> Creation<'a> {
                     self.repository
                         .command()
                         .args(["worktree", "remove", "--force", "--force"])
-                        .arg(&self.target),
+                        .arg(dunce::simplified(&self.target)),
                 )?;
             } else {
-                fs::remove_dir(&self.target).map_err(|error| Error::io(&self.target, error))?;
+                match fs::remove_dir(&self.target) {
+                    Ok(()) => {}
+                    // Git can remove the reserved directory after registration fails.
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(Error::io(&self.target, error)),
+                }
             }
             self.created.pop();
         }
@@ -362,7 +373,7 @@ fn committed(repository: &Git, request: &AddRequest) -> Result<Worktree> {
         repository
             .command()
             .args(["worktree", "add", "--detach", "--lock", "--"])
-            .arg(&source)
+            .arg(dunce::simplified(&source))
             .arg(&commit),
     );
     let result = registered.and_then(|_| {
@@ -395,7 +406,7 @@ fn remove_seed(repository: &Git, root: &Path, source: &Path) -> Result<()> {
             repository
                 .command()
                 .args(["worktree", "remove", "--force", "--force", "--"])
-                .arg(source),
+                .arg(dunce::simplified(source)),
         )?;
     }
     fs::remove_dir_all(root).map_err(|error| Error::io(root, error))

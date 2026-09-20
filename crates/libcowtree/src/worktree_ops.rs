@@ -21,6 +21,6 @@ pub fn remove_worktree(path: &Path, source: Option<&Path>, force: bool) -> Resul
     if force {
         command.arg("--force");
     }
-    repository.capture(command.arg("--").arg(path))?;
+    repository.capture(command.arg("--").arg(dunce::simplified(&path)))?;
     Ok(())
 }

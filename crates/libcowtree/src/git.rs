@@ -41,7 +41,7 @@ impl Git {
 
     pub(crate) fn command(&self) -> Command {
         let mut command = Command::new("git");
-        command.arg("-C").arg(&self.root);
+        command.arg("-C").arg(dunce::simplified(&self.root));
         command
     }
 
