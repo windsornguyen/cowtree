@@ -25,6 +25,6 @@ pub use database::Store;
 pub use error::{Error, ErrorCode, ErrorDetails, LimitKind, Result, RetryAction, WireError};
 pub use import::ImportProgress;
 pub use types::{
-    Candidate, Entry, EntryKind, Grant, LeafId, LeafView, Limits, Maintenance, Proposal,
+    Candidate, Entry, EntryKind, FileKind, Grant, LeafId, LeafView, Limits, Maintenance, Proposal,
     ProposalInput, ProposedChange, Receipt, RequestId, ResourcePath, Snapshot, Token, Version,
 };

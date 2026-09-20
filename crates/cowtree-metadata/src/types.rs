@@ -26,10 +26,13 @@ impl ResourcePath {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    #[must_use]
     pub fn overlaps(&self, other: &Self) -> bool {
-        self == other
-            || self.0.strip_prefix(&other.0).is_some_and(|tail| tail.starts_with('/'))
-            || other.0.strip_prefix(&self.0).is_some_and(|tail| tail.starts_with('/'))
+        self.contains(other) || other.contains(self)
+    }
+    #[must_use]
+    pub fn contains(&self, other: &Self) -> bool {
+        self == other || other.0.strip_prefix(&self.0).is_some_and(|tail| tail.starts_with('/'))
     }
 }
 impl TryFrom<String> for ResourcePath {
@@ -84,19 +87,52 @@ identifier!(LeafId, 1);
 identifier!(Version, 0);
 identifier!(Token, 1);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryKind {
     File,
     Executable,
     Symlink,
+    /// A scoped variant deliberately fails decoding in readers that cannot enforce it.
+    ReadOnly {
+        file_kind: FileKind,
+        scope: ResourcePath,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileKind {
+    File,
+    Executable,
+    Symlink,
+}
+
+impl EntryKind {
+    #[must_use]
+    pub fn file_kind(&self) -> FileKind {
+        match self {
+            Self::File => FileKind::File,
+            Self::Executable => FileKind::Executable,
+            Self::Symlink => FileKind::Symlink,
+            Self::ReadOnly { file_kind, .. } => *file_kind,
+        }
+    }
+
+    #[must_use]
+    pub fn read_only_scope(&self) -> Option<&ResourcePath> {
+        match self {
+            Self::ReadOnly { scope, .. } => Some(scope),
+            Self::File | Self::Executable | Self::Symlink => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Entry {
     /// Immutable bytes, including symlink text for symlinks.
     pub object: ObjectId,
-    /// Git-compatible file kind and executable state.
+    /// File kind and any immutable namespace bound into this snapshot.
     pub kind: EntryKind,
 }
 pub type Snapshot = BTreeMap<ResourcePath, Entry>;

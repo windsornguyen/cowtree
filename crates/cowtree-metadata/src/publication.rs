@@ -393,7 +393,15 @@ pub(crate) fn validate_namespace(snapshot: &Snapshot, max_paths: u32) -> Result<
     if snapshot.len() > max_paths as usize {
         return Err(Error::Limit(crate::LimitKind::SnapshotPaths));
     }
-    for path in snapshot.keys() {
+    for (path, entry) in snapshot {
+        if let Some(scope) = entry.kind.read_only_scope() {
+            if !scope.contains(path) {
+                return Err(Error::InvalidReadOnlyScope {
+                    path: path.clone(),
+                    scope: scope.clone(),
+                });
+            }
+        }
         for (index, _) in path.as_str().match_indices('/') {
             let ancestor = crate::ResourcePath::parse(&path.as_str()[..index])?;
             if snapshot.contains_key(&ancestor) {

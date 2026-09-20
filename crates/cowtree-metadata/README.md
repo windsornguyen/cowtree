@@ -40,6 +40,12 @@ the encoded request limit can be reached before the library's 64 MiB blob limit.
 
 ## Operations
 
+Imported entries can bind a read-only namespace into their snapshot identity.
+The authority rejects overlapping grants before allocating tokens, including
+requests for ancestors that could replace the namespace. See
+[read-only snapshots](../../docs/readonly-snapshots.rst) for the tagged kind,
+compatibility boundary, and admission tests.
+
 | Rust operation / JSON `op` | Contract |
 |---|---|
 | `create` / `init`, `open` | Create a new authority or validate schema and required durability settings. Capture absolute paths so later `chdir` cannot redirect objects. |

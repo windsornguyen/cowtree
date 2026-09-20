@@ -44,6 +44,10 @@ pub enum Error {
     NotActivated(String),
     #[error("resource {0} contains retained dirty data")]
     DirtyPath(String),
+    #[error("resource {path:?} overlaps read-only namespace {scope:?}")]
+    ReadOnlyPath { path: crate::ResourcePath, scope: crate::ResourcePath },
+    #[error("read-only scope {scope:?} does not contain {path:?}")]
+    InvalidReadOnlyScope { path: crate::ResourcePath, scope: crate::ResourcePath },
     #[error("upload is not ready or not owned by this leaf")]
     UploadNotReady,
     #[error("request sequence {0} is expired or already retired")]
@@ -139,6 +143,8 @@ pub enum ErrorCode {
     StaleToken,
     NotActivated,
     DirtyPath,
+    ReadOnlyPath,
+    InvalidReadOnlyScope,
     UploadNotReady,
     RequestExpired,
     RequestSequence,
@@ -180,6 +186,7 @@ pub enum ErrorDetails {
     None,
     Conflict { reason: String },
     Path { path: String },
+    ReadOnlyScope { path: crate::ResourcePath, scope: crate::ResourcePath },
     Identifier { value: u64 },
     Leaf { leaf: i64 },
     Sequence { sequence: i64 },
@@ -240,6 +247,8 @@ impl Error {
             Self::StaleToken(_) => ErrorCode::StaleToken,
             Self::NotActivated(_) => ErrorCode::NotActivated,
             Self::DirtyPath(_) => ErrorCode::DirtyPath,
+            Self::ReadOnlyPath { .. } => ErrorCode::ReadOnlyPath,
+            Self::InvalidReadOnlyScope { .. } => ErrorCode::InvalidReadOnlyScope,
             Self::UploadNotReady => ErrorCode::UploadNotReady,
             Self::RequestExpired(_) => ErrorCode::RequestExpired,
             Self::RequestSequence { .. } => ErrorCode::RequestSequence,
@@ -285,6 +294,9 @@ impl Error {
                 extended_code: error.sqlite_error().map(|error| error.extended_code),
             },
             Self::Object(error) => object_details(error),
+            Self::ReadOnlyPath { path, scope } | Self::InvalidReadOnlyScope { path, scope } => {
+                ErrorDetails::ReadOnlyScope { path: path.clone(), scope: scope.clone() }
+            }
             Self::Io { path, source } => {
                 ErrorDetails::Io { path: path.clone(), os_code: source.raw_os_error() }
             }
