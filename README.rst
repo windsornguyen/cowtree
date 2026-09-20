@@ -233,14 +233,16 @@ recovery guarantee for ``SIGKILL``, power loss, or a host crash. Such failures
 can leave a partially initialized, locked worktree or a newly created branch.
 Inspect and repair that state with Git before reusing the destination.
 
-Workspace protocol proposal
----------------------------
+Workspace protocol design
+-------------------------
 
-The `versioned workspace proposal <docs/workspace-protocol.rst>`_ describes
+The `versioned workspace design <docs/workspace-protocol.rst>`_ explains the
 immutable snapshots, path reservations, fencing tokens, and batched publication
-for a future metadata coordinator. Its bounded model and proof limits are
-documented separately. These operations are not part of the current CLI or
-Python API.
+used by managed workspaces. The `managed workspace guide
+<docs/managed-workspaces.rst>`_ defines the available CLI and Python operations.
+Transparent file-descriptor rebinding, native change tracking, and distributed
+coordination remain future work. Bounded model checks do not establish those
+capabilities or power-loss durability.
 
 Contributing
 ------------
@@ -296,5 +298,7 @@ Run the complete publication example with::
 
     cargo run --locked -p cowtree-metadata --example publish
 
-The Python Git-worktree API does not use this backend yet. Its activation
-operation installs a logical view; filesystem installation is a separate step.
+The standalone ``cowtree.core`` API does not use this backend. The managed
+``cowtree.workspace.Workspace`` API uses it for publication and coordinates
+filesystem installation in Python. Calling the Rust authority directly changes
+only its logical view; it does not install files in a working directory.
