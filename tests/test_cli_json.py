@@ -30,6 +30,14 @@ def test_domain_errors_are_one_json_record(tmp_path: Path) -> None:
     assert err.code is CowtreeErrorCode.INVALID_ARGUMENTS
 
 
+def test_global_json_flag_survives_subcommand_parsing(tmp_path: Path) -> None:
+    res = run_cli(arguments=["--json", "doctor", str(tmp_path)], cwd=tmp_path)
+    assert res.returncode in (0, 1), res.stderr
+    assert not res.stderr
+    report = TypeAdapter(Success).validate_json(res.stdout)
+    assert report.kind is Command.DOCTOR
+
+
 def test_json_lifecycle_preserves_registration(cow_repository: Repository, tmp_path: Path) -> None:
     repo = cow_repository
     target = tmp_path / 'branch\n"name'

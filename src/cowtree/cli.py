@@ -75,7 +75,7 @@ class CowtreeCLI:
             parser = commands.add_parser(command.value, allow_abbrev=False)
             parser.set_defaults(command=command)
             if command is not Command.HELP:
-                parser.add_argument("--json", action="store_true")
+                parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
             parsers[command] = parser
 
         self.add_parser = parsers[Command.ADD]
