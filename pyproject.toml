@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25", "inline-tests>=0.1.0"]
+requires = ["hatchling>=1.25", "inline-tests>=0.1.0", "hatch-maturin-build==0.1.1", "maturin>=1.9.4,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -41,6 +41,8 @@ bench = ["matplotlib>=3.9"]
 [dependency-groups]
 bench = ["matplotlib>=3.9"]
 test = [
+    "editables>=0.6",
+    "hatchling>=1.25",
     "inline-tests>=0.1.0",
     "pytest>=8.0.0",
 ]
@@ -62,9 +64,22 @@ Issues = "https://github.com/windsornguyen/cowtree/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cowtree"]
+# Editable builds leave a binary in src. Only the current Rust build may package it.
+exclude = ["src/cowtree/_libcowtree*.so", "src/cowtree/_libcowtree*.pyd"]
 
-[tool.hatch.build.hooks.inline_tests]
+[tool.hatch.build.hooks.custom]
+path = "scripts/build_hook.py"
 sources = ["src"]
+
+[tool.hatch.build.hooks.maturin]
+manifest-path = "crates/cowtree-python/Cargo.toml"
+profile = "release"
+locked = true
+
+[tool.maturin]
+manifest-path = "crates/cowtree-python/Cargo.toml"
+python-source = "src"
+module-name = "cowtree._libcowtree"
 
 [tool.pytest.ini_options]
 testpaths = ["src", "tests"]

@@ -4,13 +4,12 @@ import errno
 import os
 from pathlib import Path
 import sys
-from typing import NoReturn
+from tempfile import TemporaryDirectory
 
 import pytest
 
 from cowtree.core import add_worktree, inspect_path, remove_worktree
 from cowtree.errors import CowtreeError, CowtreeErrorCode
-from cowtree.exec import CommandRunner
 from cowtree.types import WorktreeAddRequest
 
 from .conftest import Repository
@@ -306,39 +305,16 @@ def test_invariant_unresolvable_paths_raise_typed_errors(
 
 
 def test_cross_filesystem_add_fails_before_probing_or_creating_state(
-    repository: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    repository: Repository,
 ) -> None:
     repo = repository
-    target = tmp_path / "new-parent" / "cross-filesystem"
-    original = Path.stat
-
-    def other_device(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
-        result = original(self, follow_symlinks=follow_symlinks)
-        if self == repo.path:
-            result = os.stat_result(
-                (
-                    result.st_mode,
-                    result.st_ino,
-                    result.st_dev + 1,
-                    result.st_nlink,
-                    result.st_uid,
-                    result.st_gid,
-                    result.st_size,
-                    result.st_atime,
-                    result.st_mtime,
-                    result.st_ctime,
-                )
-            )
-        return result
-
-    def unexpected_probe(path: Path, runner: CommandRunner | None = None) -> NoReturn:
-        del path, runner
-        raise AssertionError("cross-filesystem add must fail before the clone probe")
-
-    monkeypatch.setattr(Path, "stat", other_device)
-    monkeypatch.setattr("cowtree.core.doctor", unexpected_probe)
-    with pytest.raises(CowtreeError) as error:
-        add_worktree(request=repo.add_request(target=target, branch="cross-filesystem"))
-    assert error.value.code == CowtreeErrorCode.DIFFERENT_FILESYSTEM
-    repo.assert_absent(target=target, branch="cross-filesystem")
-    assert not target.parent.exists()
+    other = Path("/dev/shm")  # noqa: S108 -- mkdtemp reserves a private directory on this test volume
+    if not other.is_dir() or other.stat().st_dev == repo.path.stat().st_dev:
+        pytest.skip("requires a separate writable tmpfs")
+    with TemporaryDirectory(prefix="cowtree-cross-volume-", dir=other) as root:
+        target = Path(root) / "new-parent" / "target"
+        with pytest.raises(CowtreeError) as error:
+            add_worktree(request=repo.add_request(target=target, branch="cross-filesystem"))
+        assert error.value.code == CowtreeErrorCode.DIFFERENT_FILESYSTEM
+        repo.assert_absent(target=target, branch="cross-filesystem")
+        assert not target.parent.exists()

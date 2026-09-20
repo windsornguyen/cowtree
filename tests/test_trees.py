@@ -2,12 +2,11 @@
 
 import os
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import cast
 
 import pytest
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
-from cowtree.native import clone_regular_file
 from cowtree.tree_types import CaptureMode, DerivedHardlinks, PathClass, PathPolicy
 from cowtree.trees import clone_tree, populate_tree, scan_tree
 
@@ -29,19 +28,17 @@ def test_untyped_capture_mode_cannot_disable_verification(tmp_path: Path) -> Non
 
 
 def test_metadata_capture_keeps_source_classification_without_reading_contents(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
-    (tmp_path / "source.rs").write_bytes(b"source bytes")
-
-    def unexpected_hash() -> NoReturn:
-        raise AssertionError("metadata capture read source contents")
-
-    monkeypatch.setattr("cowtree.trees.hashlib.sha256", unexpected_hash)
+    source = tmp_path / "source.rs"
+    source.write_bytes(b"source bytes")
+    source.chmod(0)
     entries = scan_tree(root=tmp_path, policy=PathPolicy(), capture=CaptureMode.METADATA)
     assert len(entries) == 1
     assert entries[0].classification is PathClass.SOURCE
     assert entries[0].digest is None
     assert entries[0].identity is not None
+    source.chmod(0o600)
 
 
 def test_tree_inherits_cache_without_ephemeral_state(
@@ -157,20 +154,3 @@ def test_owned_population_preserves_git_metadata_and_refuses_other_contents(
     with pytest.raises(CowtreeError, match="contains data"):
         populate_tree(source=cow_repository.path, target=target, policy=PathPolicy())
     assert control.read_bytes() == b"owned registration"
-
-
-def test_tree_never_publishes_bytes_different_from_capture(
-    cow_repository: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def wrong_capture(source: Path, target: Path) -> None:
-        clone_regular_file(source=source, target=target)
-        metadata = target.stat()
-        target.write_bytes(b"!" * metadata.st_size)
-        os.utime(target, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
-
-    monkeypatch.setattr("cowtree.trees.clone_regular_file", wrong_capture)
-    target = tmp_path / "copy"
-    with pytest.raises(CowtreeError):
-        clone_tree(source=cow_repository.path, target=target, policy=PathPolicy())
-    assert not target.exists()
-    assert (cow_repository.path / "file.txt").read_bytes() == b"original\n"

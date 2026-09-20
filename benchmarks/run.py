@@ -97,7 +97,7 @@ def run_benchmarks(profiles: tuple[BenchmarkProfile, ...], *, runs: int) -> Benc
 
     with tempfile.TemporaryDirectory(prefix="cowtree-bench-") as tmp:
         root = Path(tmp)
-        report = inspect_path(path=root, runner=runner)
+        report = inspect_path(path=root)
         if not report.supported:
             raise SystemExit(f"CoW unavailable for benchmark root {root}: {report.reason}")
 
@@ -187,7 +187,7 @@ class BenchmarkRepository:
             return
         if method is Method.COWTREE:
             request = WorktreeAddRequest(path=target, source=self.path, detach=True)
-            add_worktree(request=request, runner=self.io)
+            add_worktree(request=request)
             return
         raise AssertionError(f"unknown method: {method}")
 

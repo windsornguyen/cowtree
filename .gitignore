@@ -6,6 +6,8 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+src/cowtree/*.so
+src/cowtree/*.pyd
 
 target/
 node_modules/
