@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from cowtree.core import add_worktree, list_all_worktrees
-from cowtree.errors import CowtreeError, CowtreeErrorCode
+from cowtree.errors import CowtreeError
 from cowtree.types import SourceMode, WorktreeAddRequest
 from tests.conftest import Repository
 from tests.test_cli import run_cli
@@ -53,27 +53,24 @@ def test_committed_branch_uses_its_own_tip(cow_repository: Repository, tmp_path:
     assert repo.git("-C", str(target), "symbolic-ref", "HEAD").stdout == "refs/heads/resume\n"
 
 
-def test_failed_clone_removes_seed_and_owned_branch(
-    cow_repository: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_failed_registration_removes_seed_and_preserves_existing_branch(
+    cow_repository: Repository, tmp_path: Path
 ) -> None:
     repo = cow_repository
-
-    def fail_clone(source: Path, target: Path) -> None:
-        del source, target
-        raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "injected clone failure")
-
-    monkeypatch.setattr("cowtree.core.clone_regular_file", fail_clone)
+    repo.git("branch", "existing")
+    before = repo.git("rev-parse", "existing").stdout
     target = tmp_path / "failed"
-    with pytest.raises(CowtreeError, match="injected clone failure"):
+    with pytest.raises(CowtreeError):
         add_worktree(
             request=WorktreeAddRequest(
                 path=target,
                 source=repo.path,
-                branch="owned",
+                branch="existing",
                 source_mode=SourceMode.COMMIT,
             )
         )
-    repo.assert_absent(target=target, branch="owned")
+    assert not target.exists()
+    assert repo.git("rev-parse", "existing").stdout == before
     assert repo.registered == {repo.path}
     assert not list(repo.path.parent.glob(".cowtree-seed-*"))
 

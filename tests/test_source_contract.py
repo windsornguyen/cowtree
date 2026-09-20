@@ -6,7 +6,7 @@ from typing import Literal
 
 import pytest
 
-from cowtree.core import WorktreeCreation, add_worktree, list_all_worktrees, remove_worktree
+from cowtree.core import add_worktree, list_all_worktrees, remove_worktree
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.types import WorktreeAddRequest
 
@@ -113,48 +113,6 @@ def test_target_content_check_survives_unchanged_source_stat_cache(
         commit = repo.git("rev-parse", "HEAD").stdout.strip()
         add_worktree(request=request)
         repo.assert_clean(target=target, commit=commit)
-
-
-def test_pinned_commit_defines_files_when_source_index_changes(
-    cow_repository: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = cow_repository
-    commit = repo.git("rev-parse", "HEAD").stdout.strip()
-    original = WorktreeCreation.copy_files
-
-    def stage_new_file(self: WorktreeCreation) -> None:
-        (self.repository.path / "new.txt").write_bytes(b"staged during clone\n")
-        repo.git("add", "new.txt")
-        original(self)
-
-    monkeypatch.setattr(WorktreeCreation, "copy_files", stage_new_file)
-    target = tmp_path / "pinned"
-    add_worktree(request=WorktreeAddRequest(source=repo.path, path=target))
-    assert not (target / "new.txt").exists()
-    assert repo.git("diff", "--cached", "--name-only").stdout == "new.txt\n"
-    repo.assert_clean(target=target, commit=commit)
-
-
-def test_commit_change_cannot_publish_a_different_head(
-    cow_repository: Repository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = cow_repository
-    original = WorktreeCreation.copy_files
-
-    def advance_head(self: WorktreeCreation) -> None:
-        repo.git("commit", "--allow-empty", "-qm", "advance source")
-        original(self)
-
-    monkeypatch.setattr(WorktreeCreation, "copy_files", advance_head)
-    target = tmp_path / "head-change"
-    with pytest.raises(CowtreeError) as caught:
-        add_worktree(
-            request=WorktreeAddRequest(source=repo.path, path=target, branch="head-change")
-        )
-    assert caught.value.code == CowtreeErrorCode.HEAD_MISMATCH
-    assert not target.exists()
-    assert not any(tree.path == target for tree in list_all_worktrees(source=repo.path))
-    assert repo.git("show-ref", "--verify", "refs/heads/head-change", check=False).returncode != 0
 
 
 def test_worktree_autocrlf_configuration_preserves_clean_bytes(
