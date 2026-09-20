@@ -127,6 +127,7 @@ class Checks:
             process = subprocess.Popen(  # noqa: S603
                 [
                     sys.executable,
+                    "-I",
                     str(Path(__file__).with_name("supervise.py")),
                     "--timeout",
                     str(timeout_seconds),
