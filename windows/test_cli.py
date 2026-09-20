@@ -2,10 +2,12 @@
 
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 
 from pydantic import TypeAdapter
+import pytest
 
 from cowtree.cli_output import Failure, Success
 from cowtree.errors import CowtreeErrorCode
@@ -121,3 +123,24 @@ def test_git_modes_and_real_symlink_text_are_preserved(tmp_path: Path) -> None:
     tracked = io.run(argv=["git", "-C", str(target), "ls-files", "--stage", "file.txt"])
     assert tracked.stdout.startswith("100755 ")
     assert not io.run(argv=["git", "-C", str(target), "status", "--porcelain"]).stdout
+
+
+@pytest.mark.parametrize("dangling", [False, True])
+def test_directory_symlink_kind_is_preserved(tmp_path: Path, dangling: bool) -> None:
+    io = CommandRunner()
+    source = repository(io=io, root=tmp_path)
+    io.run(argv=["git", "-C", str(source), "config", "core.symlinks", "true"])
+    if not dangling:
+        (source / "directory").mkdir()
+        (source / "directory" / "nested").write_bytes(b"directory contents")
+    (source / "directory-link").symlink_to("directory", target_is_directory=True)
+    io.run(argv=["git", "-C", str(source), "add", "--all"])
+    io.run(argv=["git", "-C", str(source), "commit", "-qm", "directory symlink"])
+    target = tmp_path / "target"
+    res = cli(io=io, command=["add", str(target)], cwd=source)
+    assert res.returncode == 0, res.stderr
+    link = target / "directory-link"
+    assert link.is_symlink()
+    assert link.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_DIRECTORY
+    if not dangling:
+        assert (link / "nested").read_bytes() == b"directory contents"
