@@ -7,10 +7,12 @@ volume identities, copies integrity settings, and sends cluster-aligned ranges
 below 4 GiB. Failed copies remove only the destination created by that operation.
 There is no ordinary-copy path.
 
-The Windows CI job creates a disposable ReFS virtual disk. It checks empty,
+The Windows CI jobs create disposable ReFS virtual disks on x64 Server 2025
+and ARM64 Windows 11 (Dev Drive). They check empty,
 sub-cluster, aligned, and partial-cluster files for exact content and independent
 source/destination writes. A separate NTFS directory must reject cloning without
-creating a destination. The job detaches its own disk before deleting it.
+creating a destination. Each job detaches its own disk before deleting it.
+The Dev Drive fixture reserves 64 GiB virtually, without preallocating it.
 
 This layer qualifies the native file primitive, not the complete Windows CLI
 or managed workspace lifecycle. Repository locking, executable-mode semantics,

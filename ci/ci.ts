@@ -138,9 +138,24 @@ export const ci = workflow(
           checkout,
           setupUv,
           run("Install Python", "uv", ["python", "install", "3.10"]),
-          run("Install test dependencies", "uv", ["sync", "--locked", "--group", "test"]),
+          run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
           run("Check ReFS isolation and NTFS refusal", "pwsh", [
             "-NoProfile", "-File", "scripts/test_windows.ps1",
+          ]),
+        ],
+      }),
+      "windows-arm": job({
+        name: "Windows ARM64 Dev Drive cloning",
+        "runs-on": "windows-11-arm",
+        "timeout-minutes": 15,
+        env: { UV_PYTHON: "3.14" },
+        steps: [
+          checkout,
+          setupUv,
+          run("Install Python", "uv", ["python", "install", "3.14"]),
+          run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
+          run("Check Dev Drive isolation and NTFS refusal", "pwsh", [
+            "-NoProfile", "-File", "scripts/test_windows.ps1", "-DevDrive",
           ]),
         ],
       }),

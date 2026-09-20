@@ -161,10 +161,28 @@ jobs:
         run: uv python install 3.10
         shell: bash
       - name: Install test dependencies
-        run: uv sync --locked --group test
+        run: uv sync --locked --no-default-groups --group test
         shell: bash
       - name: Check ReFS isolation and NTFS refusal
         run: pwsh -NoProfile -File scripts/test_windows.ps1
+        shell: bash
+  windows-arm:
+    name: Windows ARM64 Dev Drive cloning
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    env:
+      UV_PYTHON: "3.14"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+      - name: Install Python
+        run: uv python install 3.14
+        shell: bash
+      - name: Install test dependencies
+        run: uv sync --locked --no-default-groups --group test
+        shell: bash
+      - name: Check Dev Drive isolation and NTFS refusal
+        run: pwsh -NoProfile -File scripts/test_windows.ps1 -DevDrive
         shell: bash
   specification:
     name: Workspace protocol model
