@@ -74,6 +74,12 @@ pub enum Error {
     BatchConflict(String),
     #[error("resolution conflicts with current state: {0}")]
     ResolutionConflict(String),
+    #[error("initial import conflicts with authority state: {0}")]
+    ImportConflict(String),
+    #[error("initial import has unpublished objects")]
+    ImportNotReady,
+    #[error("initial import source differs from its manifest at {0}")]
+    ImportSourceChanged(String),
     #[error("configured limit exceeded: {0}")]
     Limit(LimitKind),
     #[error("metadata counter exhausted")]
@@ -151,6 +157,9 @@ pub enum ErrorCode {
     CheckpointBusy,
     BatchConflict,
     ResolutionConflict,
+    ImportConflict,
+    ImportNotReady,
+    ImportSourceChanged,
 }
 
 /// Required next step, never an instruction to retry indefinitely.
@@ -246,6 +255,9 @@ impl Error {
             Self::InvalidSymlink(_) => ErrorCode::InvalidSymlink,
             Self::BatchConflict(_) => ErrorCode::BatchConflict,
             Self::ResolutionConflict(_) => ErrorCode::ResolutionConflict,
+            Self::ImportConflict(_) => ErrorCode::ImportConflict,
+            Self::ImportNotReady => ErrorCode::ImportNotReady,
+            Self::ImportSourceChanged(_) => ErrorCode::ImportSourceChanged,
             Self::Limit(_) => ErrorCode::LimitExceeded,
             Self::CounterExhausted => ErrorCode::CounterExhausted,
             Self::CheckpointBusy => ErrorCode::CheckpointBusy,
@@ -283,10 +295,11 @@ impl Error {
             | Self::DirtyPath(path)
             | Self::StaleOrigin(path)
             | Self::NamespaceConflict(path)
-            | Self::InvalidSymlink(path) => ErrorDetails::Path { path: path.clone() },
-            Self::BatchConflict(reason) | Self::ResolutionConflict(reason) => {
-                ErrorDetails::Conflict { reason: reason.clone() }
-            }
+            | Self::InvalidSymlink(path)
+            | Self::ImportSourceChanged(path) => ErrorDetails::Path { path: path.clone() },
+            Self::BatchConflict(reason)
+            | Self::ResolutionConflict(reason)
+            | Self::ImportConflict(reason) => ErrorDetails::Conflict { reason: reason.clone() },
             Self::InvalidInputFile(path) => {
                 ErrorDetails::Path { path: path.to_string_lossy().into_owned() }
             }
@@ -306,6 +319,7 @@ impl Error {
             | Self::Schema
             | Self::Durability
             | Self::UploadNotReady
+            | Self::ImportNotReady
             | Self::RequestConflict
             | Self::EmptyProposal
             | Self::Aborted

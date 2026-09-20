@@ -11,7 +11,7 @@ import unicodedata
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.native import clone_regular_file
-from cowtree.tree_types import PathClass, PathPolicy, TreeEntry, TreeKind
+from cowtree.tree_types import DerivedHardlinks, PathClass, PathPolicy, TreeEntry, TreeKind
 
 
 def validate_policy(policy: PathPolicy) -> None:
@@ -60,7 +60,9 @@ def classify(path: str, policy: PathPolicy) -> PathClass:
     return PathClass.SOURCE
 
 
-def capture_entry(root: Path, path: str, classification: PathClass) -> TreeEntry:
+def capture_entry(
+    root: Path, path: str, classification: PathClass, policy: PathPolicy
+) -> TreeEntry:
     """Hash source bytes and capture clone metadata for one supported entry."""
     source = root / path
     before = source.lstat()
@@ -74,7 +76,10 @@ def capture_entry(root: Path, path: str, classification: PathClass) -> TreeEntry
         link = os.readlink(source)
         digest = hashlib.sha256(os.fsencode(link)).hexdigest()
     elif stat.S_ISREG(before.st_mode):
-        if before.st_nlink != 1:
+        if before.st_nlink != 1 and not (
+            classification is PathClass.DERIVED
+            and policy.derived_hardlinks is DerivedHardlinks.CLONE
+        ):
             raise CowtreeError(CowtreeErrorCode.UNSUPPORTED_MODE, f"hard-linked file: {path}")
         kind = TreeKind.FILE
         if classification is PathClass.SOURCE:
@@ -117,7 +122,9 @@ def scan_tree(root: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
                 if not selected_child or source.is_symlink() or not source.is_dir():
                     continue
                 classification = PathClass.DERIVED
-            entry = capture_entry(root=root, path=path, classification=classification)
+            entry = capture_entry(
+                root=root, path=path, classification=classification, policy=policy
+            )
             entries.append(entry)
             if entry.kind is TreeKind.DIRECTORY:
                 pending.append(source)
@@ -167,7 +174,7 @@ def populate_tree(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeE
         else:
             clone_regular_file(source=source / entry.path, target=destination)
             cloned = capture_entry(
-                root=target, path=entry.path, classification=entry.classification
+                root=target, path=entry.path, classification=entry.classification, policy=policy
             )
             if cloned != entry:
                 raise CowtreeError(

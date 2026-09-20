@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 from dataclasses import dataclass
 import fcntl
+from itertools import chain
 import os
 from pathlib import Path
 import shutil
@@ -13,7 +14,7 @@ import uuid
 
 from pydantic import TypeAdapter
 
-from cowtree.durable import sync_directory, sync_file, write_record
+from cowtree.durable import sync_directory, sync_tree, write_record
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
 from cowtree.git import GitRepository
@@ -180,14 +181,21 @@ class Leaves:
             target.run(args=["-c", "core.fsync=all", "reset", "--mixed", "-q", node.git_commit])
             if target.head() != node.git_commit or target.status():
                 raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, "new leaf checkout is not clean")
-            for entry in entries:
-                if entry.kind is TreeKind.FILE:
-                    sync_file(path=record.path / entry.path)
-            for entry in reversed(entries):
-                if entry.kind is TreeKind.DIRECTORY:
-                    sync_directory(path=record.path / entry.path)
-            sync_file(path=record.path / ".git")
-            sync_directory(path=record.path)
+            sync_tree(
+                root=record.path.parent,
+                files=chain(
+                    (record.path / entry.path for entry in entries if entry.kind is TreeKind.FILE),
+                    (record.path / ".git",),
+                ),
+                directories=chain(
+                    (
+                        record.path / entry.path
+                        for entry in reversed(entries)
+                        if entry.kind is TreeKind.DIRECTORY
+                    ),
+                    (record.path,),
+                ),
+            )
             leaf = Leaf(
                 id=record.leaf,
                 path=record.path,

@@ -1,0 +1,353 @@
+{
+  "filesystem": "APFS",
+  "rust": "1.97.1",
+  "file_bytes": 1024,
+  "trials": {
+    "baseline": {
+      "trials": [
+        {
+          "elapsed_seconds": 10.24431487498805,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "create_leaf": 1,
+            "acquire": 1,
+            "activate": 128,
+            "stage_file": 128,
+            "edit": 128,
+            "propose": 1,
+            "prepare": 1,
+            "commit": 1,
+            "drop_leaf": 1
+          },
+          "operation_seconds": {
+            "init": 0.2693476249696687,
+            "create_leaf": 0.023259999987203628,
+            "acquire": 0.025870292040053755,
+            "activate": 2.542045329348184,
+            "stage_file": 4.3021747508319095,
+            "edit": 2.523745338607114,
+            "propose": 0.028628500003833324,
+            "prepare": 0.03533412498654798,
+            "commit": 0.03386787499766797,
+            "drop_leaf": 0.01697216700995341
+          }
+        },
+        {
+          "elapsed_seconds": 9.308381792041473,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "create_leaf": 1,
+            "acquire": 1,
+            "activate": 128,
+            "stage_file": 128,
+            "edit": 128,
+            "propose": 1,
+            "prepare": 1,
+            "commit": 1,
+            "drop_leaf": 1
+          },
+          "operation_seconds": {
+            "init": 0.030875166004989296,
+            "create_leaf": 0.015913209004793316,
+            "acquire": 0.02726770896697417,
+            "activate": 2.295022800739389,
+            "stage_file": 4.010542331787292,
+            "edit": 2.329953453852795,
+            "propose": 0.02365408296464011,
+            "prepare": 0.03717308398336172,
+            "commit": 0.03096329199615866,
+            "drop_leaf": 0.019784374977461994
+          }
+        },
+        {
+          "elapsed_seconds": 10.088003957993351,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "create_leaf": 1,
+            "acquire": 1,
+            "activate": 128,
+            "stage_file": 128,
+            "edit": 128,
+            "propose": 1,
+            "prepare": 1,
+            "commit": 1,
+            "drop_leaf": 1
+          },
+          "operation_seconds": {
+            "init": 0.04044950002571568,
+            "create_leaf": 0.016034375003073364,
+            "acquire": 0.02809104201151058,
+            "activate": 2.496794615581166,
+            "stage_file": 4.313968249072786,
+            "edit": 2.54783283197321,
+            "propose": 0.020914207969326526,
+            "prepare": 0.03396370803238824,
+            "commit": 0.03189749998273328,
+            "drop_leaf": 0.016881040995940566
+          }
+        }
+      ],
+      "median_seconds": 10.088003957993351,
+      "binary_sha256": "e52b1e80adb0241956fdc4dab16e0e3e095e54b13b949d8f99ae0217aa6f20eb"
+    },
+    "chunked": {
+      "trials": [
+        {
+          "elapsed_seconds": 2.468652874988038,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.5417951249983162,
+            "begin_import": 0.10329895903123543,
+            "import_chunk": 0.9626040830044076,
+            "finish_import": 0.05903258395846933,
+            "tip": 0.009897457959596068
+          }
+        },
+        {
+          "elapsed_seconds": 2.0243035829626024,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.1247605420066975,
+            "begin_import": 0.12614033301360905,
+            "import_chunk": 1.0274959579692222,
+            "finish_import": 0.08360395795898512,
+            "tip": 0.008024874958209693
+          }
+        },
+        {
+          "elapsed_seconds": 2.191391250002198,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.1063774159993045,
+            "begin_import": 0.2924207909964025,
+            "import_chunk": 0.8496401670272462,
+            "finish_import": 0.040944916021544486,
+            "tip": 0.008998999954201281
+          }
+        }
+      ],
+      "median_seconds": 2.191391250002198,
+      "binary_sha256": "4b6b114e37334b5c21306cb09d951bd81f62d22d3d28f36f1717fdd376bbf1e1"
+    },
+    "single_full": {
+      "trials": [
+        {
+          "elapsed_seconds": 1.8523948329966515,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.49472108302870765,
+            "begin_import": 0.022448458999861032,
+            "import_chunk": 0.6014350000186823,
+            "finish_import": 0.03713191696442664,
+            "tip": 0.00576570798875764
+          }
+        },
+        {
+          "elapsed_seconds": 1.2304957499727607,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.03155879204859957,
+            "begin_import": 0.02130491699790582,
+            "import_chunk": 0.5878731260308996,
+            "finish_import": 0.038379917037673295,
+            "tip": 0.005096208013128489
+          }
+        },
+        {
+          "elapsed_seconds": 1.1439573329989798,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.0290253339917399,
+            "begin_import": 0.020143291039858013,
+            "import_chunk": 0.6108854169724509,
+            "finish_import": 0.03890358400531113,
+            "tip": 0.004958582983817905
+          }
+        }
+      ],
+      "median_seconds": 1.2304957499727607,
+      "binary_sha256": "9da3c4a8178c863a0bfc0b4f370f48504afe15114c4dec489ff6647abb25682d"
+    },
+    "grouped_debug": {
+      "trials": [
+        {
+          "elapsed_seconds": 1.232023750024382,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.36589041695697233,
+            "begin_import": 0.02645775000564754,
+            "import_chunk": 0.13818966696271673,
+            "finish_import": 0.04839249997166917,
+            "tip": 0.004632791969925165
+          }
+        },
+        {
+          "elapsed_seconds": 0.8717586670536548,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.03842179098865017,
+            "begin_import": 0.03200537501834333,
+            "import_chunk": 0.1626196660217829,
+            "finish_import": 0.04412099998444319,
+            "tip": 0.00494833302218467
+          }
+        },
+        {
+          "elapsed_seconds": 0.8746350419824012,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.03513212502002716,
+            "begin_import": 0.021231917024124414,
+            "import_chunk": 0.14553145901300013,
+            "finish_import": 0.036896999983582646,
+            "tip": 0.004696165968198329
+          }
+        }
+      ],
+      "median_seconds": 0.8746350419824012,
+      "binary_sha256": "10a39b31d4b9ac4f9f71892925c1887dfafb2b512a3e4ca75ac6f009350d8c79"
+    },
+    "grouped_release": {
+      "trials": [
+        {
+          "elapsed_seconds": 1.3573587500141002,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.423189791967161,
+            "begin_import": 0.06891462503699586,
+            "import_chunk": 0.10563891695346683,
+            "finish_import": 0.035835333983413875,
+            "tip": 0.00505712500307709
+          }
+        },
+        {
+          "elapsed_seconds": 0.7308977919747122,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.031107666029129177,
+            "begin_import": 0.01994504197500646,
+            "import_chunk": 0.11522479203995317,
+            "finish_import": 0.03406737500336021,
+            "tip": 0.005226542009040713
+          }
+        },
+        {
+          "elapsed_seconds": 0.7457905000192113,
+          "source_files": 128,
+          "verified_files": 384,
+          "operations": {
+            "init": 1,
+            "begin_import": 1,
+            "import_chunk": 2,
+            "finish_import": 1,
+            "tip": 1
+          },
+          "operation_seconds": {
+            "init": 0.04032854101387784,
+            "begin_import": 0.03170987498015165,
+            "import_chunk": 0.10257883393205702,
+            "finish_import": 0.03383183298865333,
+            "tip": 0.0050007919780910015
+          }
+        }
+      ],
+      "median_seconds": 0.7457905000192113,
+      "binary_sha256": "52f8e8ab14fcbd1c87e32efce2b4182dd7cf3116284dbc8417ffaf52b5149051"
+    }
+  },
+  "scope": "fresh 128-file stores; ordinary active host; no universal latency guarantee"
+}

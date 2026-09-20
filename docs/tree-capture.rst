@@ -10,8 +10,10 @@ named ``.git`` or ``.cowtree`` are always excluded.
 ``clone_tree`` creates an absent destination using the existing native CoW
 primitive. It preserves derived bytes and timestamps without hashing cache
 payload. Symlinks preserve their text and are not traversed. Empty directories
-are retained. Hard-linked files and special files outside ephemeral subtrees
-fail explicitly.
+are retained. Source hard links and special files outside ephemeral subtrees
+fail explicitly. Derived hard links also fail by default. Explicit
+``DerivedHardlinks.CLONE`` clones each cache pathname to an independent inode;
+it preserves file contents and metadata, not hard-link alias behavior.
 
 The caller must stop writers during capture. The before/after checks detect
 observed changes but do not turn a file walk into an atomic filesystem snapshot.

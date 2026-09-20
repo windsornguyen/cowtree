@@ -60,7 +60,7 @@ fn version_two_migrates_without_changing_snapshot_or_active_leaves() {
     let tip = store.tip().unwrap();
     drop(store);
     let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
-    connection.execute_batch("DROP TABLE client_pins; PRAGMA user_version=2;").unwrap();
+    connection.execute_batch("DROP TABLE client_pins; DROP TABLE import_progress; DROP TABLE imports; PRAGMA user_version=2;").unwrap();
     drop(connection);
     let mut reopened = Store::open(&root).unwrap();
     assert_eq!(reopened.tip().unwrap(), tip);
@@ -69,7 +69,7 @@ fn version_two_migrates_without_changing_snapshot_or_active_leaves() {
     let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
     assert_eq!(
         connection.pragma_query_value::<i64, _>(None, "user_version", |row| row.get(0)).unwrap(),
-        3
+        4
     );
 }
 

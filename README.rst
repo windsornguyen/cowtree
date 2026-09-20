@@ -16,6 +16,11 @@ Start with the `managed workspace guide <docs/managed-workspaces.rst>`_. It list
 the complete CLI and Python API, JSON failures, editor coordination rules, and
 a runnable workflow. The original tracked-file commands below remain supported.
 
+`Resumable initial import <docs/initial-import.rst>`_ removes per-file protocol
+round trips. `Cargo qualification <docs/cargo-workspaces.rst>`_ exercises real
+compiled caches and explicit derived hard-link handling. The
+`BSMR boundary <docs/bsmr-workspaces.rst>`_ keeps action-cache authority with BSMR.
+
 `Build-cache measurements <docs/warm-cache.rst>`_ demonstrate actual compiler
 reuse and report total creation cost. `Lifecycle qualification
 <docs/workspace-qualification.rst>`_ checks independently predicted file states
@@ -147,7 +152,7 @@ prevent an independent add.
 ``inspect_path`` returns a frozen ``DoctorReport`` with ``path: Path``,
 ``filesystem: FilesystemKind``, ``clone_tool: CloneTool | None``, and
 ``reason: str | None``. The enums live in ``cowtree.types``. Filesystem values
-are ``apfs``, ``reflink``, or ``unsupported``. ``supported`` is true only when
+are ``clonefile``, ``reflink``, or ``unsupported``. ``supported`` is true only when
 a native clone probe succeeds and ``clone_tool`` is present. An unsupported
 filesystem returns a report with ``supported=False``; invalid directories and
 operational probe failures raise an error.

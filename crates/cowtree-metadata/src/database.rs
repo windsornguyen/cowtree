@@ -17,7 +17,7 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 0x43575452;
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 /// One connection to the same-host SQLite authority and its immutable object directory.
 pub struct Store {
@@ -135,6 +135,7 @@ impl Store {
     pub fn create_leaf(&mut self) -> Result<LeafId> {
         self.capacity()?;
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        crate::import::require_no_import(&tx)?;
         let count: i64 = tx.query_row("SELECT count(*) FROM leaves", [], |r| r.get(0))?;
         if count >= i64::from(self.limits.max_leaves) {
             return Err(Error::Limit(crate::LimitKind::ActiveLeaves));
@@ -279,10 +280,18 @@ fn migrate(connection: &Connection) -> Result<()> {
     match version {
         SCHEMA_VERSION => return Ok(()),
         1 => tx.execute_batch("ALTER TABLE proposals ADD COLUMN batch_id TEXT;")?,
-        2 => {}
+        2 | 3 => {}
         _ => return Err(Error::Schema),
     }
-    tx.execute_batch("CREATE TABLE client_pins(object TEXT PRIMARY KEY);")?;
+    if version < 3 {
+        tx.execute_batch("CREATE TABLE client_pins(object TEXT PRIMARY KEY);")?;
+    }
+    tx.execute_batch(
+        "CREATE TABLE imports(singleton INTEGER PRIMARY KEY CHECK(singleton=1), root TEXT NOT NULL,
+         manifest_json TEXT NOT NULL);
+         CREATE TABLE import_progress(singleton INTEGER PRIMARY KEY REFERENCES imports(singleton),
+         completed INTEGER NOT NULL CHECK(completed>=0), complete INTEGER NOT NULL CHECK(complete IN (0,1)));",
+    )?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
     Ok(())

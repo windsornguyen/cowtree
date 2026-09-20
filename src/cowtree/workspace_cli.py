@@ -21,13 +21,14 @@ from cowtree.metadata_types import BatchCandidate, Record, Request
 from cowtree.publications import Publications
 from cowtree.resolutions import Choice, Resolutions
 from cowtree.seals import Seals
-from cowtree.tree_types import PathPolicy
+from cowtree.tree_types import DerivedHardlinks, PathPolicy
 from cowtree.views import Views
 from cowtree.workspace import Workspace
 
 
 class Action(str, Enum):
     INIT = "init"
+    IMPORT_STATUS = "import-status"
     LIST = "list"
     FORK = "fork"
     ACQUIRE = "acquire"
@@ -66,6 +67,7 @@ class Options(argparse.Namespace):
     force: bool = False
     derived: list[str] = field(default_factory=list)
     ephemeral: list[str] = field(default_factory=list)
+    derived_hardlinks: DerivedHardlinks = DerivedHardlinks.REJECT
     paths: list[str] = field(default_factory=list)
     command: list[str] = field(default_factory=list)
     identities: list[int] = field(default_factory=list)
@@ -109,6 +111,12 @@ def parser() -> Parser:
             command.add_argument("--binary", type=Path, required=True)
             command.add_argument("--derived", action="append", default=[])
             command.add_argument("--ephemeral", action="append", default=[])
+            command.add_argument(
+                "--derived-hardlinks",
+                type=DerivedHardlinks,
+                choices=list(DerivedHardlinks),
+                default=DerivedHardlinks.REJECT,
+            )
         if action is Action.FORK:
             command.add_argument("path", type=Path)
             command.add_argument("--node")
@@ -293,13 +301,18 @@ def run(argv: list[str]) -> int:
     adapter = TypeAdapter(JsonValue)
     try:
         options = parse(argv=argv)
-        if options.action is Action.INIT:
+        if options.action is Action.IMPORT_STATUS:
+            progress = Workspace.import_status(root=options.root)
+            value = None if progress is None else progress.model_dump(mode="json")
+        elif options.action is Action.INIT:
             workspace = Workspace.create(
                 root=options.root,
                 source=options.source,
                 binary=options.binary,
                 policy=PathPolicy(
-                    derived=tuple(options.derived), ephemeral=tuple(options.ephemeral)
+                    derived=tuple(options.derived),
+                    ephemeral=tuple(options.ephemeral),
+                    derived_hardlinks=options.derived_hardlinks,
                 ),
             )
             value = workspace.config.model_dump(mode="json")

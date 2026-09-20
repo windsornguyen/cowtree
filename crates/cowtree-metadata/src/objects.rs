@@ -180,6 +180,55 @@ impl ObjectStore {
         Ok(id)
     }
 
+    /// Publish one bounded group while the caller excludes collection.
+    ///
+    /// Every payload completes file writeout. On macOS the final directory flush
+    /// also flushes the device cache for the group; callers commit progress afterward.
+    /// Existing verified objects are flushed without rewriting a temporary duplicate.
+    pub(crate) fn put_batch(&self, payloads: &[Vec<u8>]) -> Result<(), ObjectError> {
+        let _publication = self.lock(FlockOperation::LockShared)?;
+        for bytes in payloads {
+            let id = ObjectId::from_bytes(bytes);
+            let target = self.path(&id);
+            match self.verified(&id) {
+                Ok((file, _)) => {
+                    writeout_file(&file)
+                        .map_err(|source| ObjectError::Io { path: target, source })?;
+                    continue;
+                }
+                Err(ObjectError::Missing { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            let mut temporary = tempfile::Builder::new()
+                .prefix(&format!(".pending-{id}-"))
+                .tempfile_in(&self.root)
+                .map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+            let temporary_path = temporary.path().to_owned();
+            crate::fault::checkpoint("after-object-temp-created");
+            temporary
+                .write_all(bytes)
+                .and_then(|()| writeout_file(temporary.as_file()))
+                .map_err(|source| ObjectError::Io { path: temporary_path.clone(), source })?;
+            match fs::hard_link(&temporary_path, &target) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    let (file, _) = self.verified(&id)?;
+                    writeout_file(&file)
+                        .map_err(|source| ObjectError::Io { path: target, source })?;
+                }
+                Err(source) => return Err(ObjectError::Io { path: target, source }),
+            }
+            temporary.close().map_err(|source| ObjectError::Io { path: temporary_path, source })?;
+        }
+        crate::fault::checkpoint("before-object-group-flush");
+        crate::fault::io_error("object-group-flush")
+            .map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+        sync_directory(&self.root)
+            .map_err(|source| ObjectError::Io { path: self.root.clone(), source })?;
+        crate::fault::checkpoint("after-object-group-flush");
+        Ok(())
+    }
+
     /// Read complete bytes while the caller holds a retention pin; verify the digest.
     pub fn read(&self, id: &ObjectId) -> Result<Vec<u8>, ObjectError> {
         self.verified(id).map(|(_, bytes)| bytes)
@@ -280,6 +329,16 @@ impl ObjectStore {
         }
         ObjectError::Io { path, source }
     }
+}
+
+// Batch callers hold the metadata writer lock until the directory's device flush.
+// POSIX fsync writes macOS file data out without repeating the device-wide flush.
+fn writeout_file(file: &File) -> io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let result = rustix::fs::fsync(file).map_err(Into::into);
+    #[cfg(not(target_os = "macos"))]
+    let result = sync_file(file);
+    result
 }
 
 fn entry_identity(entry: &fs::DirEntry) -> Result<(ObjectId, bool), ObjectError> {

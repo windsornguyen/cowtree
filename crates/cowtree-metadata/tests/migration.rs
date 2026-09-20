@@ -12,7 +12,7 @@ use cowtree_metadata::{
 fn version_one(root: &Path) {
     let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
     connection
-        .execute_batch("ALTER TABLE proposals DROP COLUMN batch_id; DROP TABLE client_pins; PRAGMA user_version=1;")
+        .execute_batch("ALTER TABLE proposals DROP COLUMN batch_id; DROP TABLE client_pins; DROP TABLE import_progress; DROP TABLE imports; PRAGMA user_version=1;")
         .unwrap();
 }
 
@@ -52,11 +52,7 @@ fn migration_preserves_pending_candidates_receipts_and_unsubmitted_cancellation(
     assert!(matches!(reopened.abort(canceled), Err(Error::RequestExpired(3))));
     let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
     let tables: i64 = connection
-        .query_row(
-            "SELECT count(*) FROM sqlite_schema WHERE name IN ('bindings','imports')",
-            [],
-            |row| row.get(0),
-        )
+        .query_row("SELECT count(*) FROM sqlite_schema WHERE name='bindings'", [], |row| row.get(0))
         .unwrap();
     assert_eq!(tables, 0);
 }
@@ -86,7 +82,7 @@ fn concurrent_openers_migrate_the_same_authority_once() {
     let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
     let version: i64 =
         connection.pragma_query_value(None, "user_version", |row| row.get(0)).unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
 }
 
 #[test]
@@ -100,4 +96,26 @@ fn unsupported_schema_is_not_rewritten() {
     let version: i64 =
         connection.pragma_query_value(None, "user_version", |row| row.get(0)).unwrap();
     assert_eq!(version, 99);
+}
+
+#[test]
+fn version_three_adds_import_progress_without_replacing_existing_client_pins() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("store");
+    let mut store = Store::create(&root, Limits::default()).unwrap();
+    let (_, empty_root) = store.tip().unwrap();
+    store.replace_client_pins(&BTreeSet::from([empty_root.clone()])).unwrap();
+    drop(store);
+    let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
+    connection
+        .execute_batch("DROP TABLE import_progress; DROP TABLE imports; PRAGMA user_version=3;")
+        .unwrap();
+    drop(connection);
+    let reopened = Store::open(&root).unwrap();
+    assert_eq!(reopened.status_import().unwrap(), None);
+    drop(reopened);
+    let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
+    let object: String =
+        connection.query_row("SELECT object FROM client_pins", [], |row| row.get(0)).unwrap();
+    assert_eq!(object, empty_root.as_str());
 }

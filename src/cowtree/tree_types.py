@@ -18,6 +18,13 @@ class TreeKind(str, Enum):
     SYMLINK = "symlink"
 
 
+class DerivedHardlinks(str, Enum):
+    """Reject aliases or explicitly materialize each cache pathname independently."""
+
+    REJECT = "reject"
+    CLONE = "clone"
+
+
 @dataclass(frozen=True)
 class PathPolicy:
     """Classify explicit path prefixes; all other paths are source."""
@@ -25,6 +32,7 @@ class PathPolicy:
     derived: tuple[str, ...] = ()
     ephemeral: tuple[str, ...] = ()
     ignored: tuple[str, ...] = ()
+    derived_hardlinks: DerivedHardlinks = DerivedHardlinks.REJECT
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ import pytest
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.native import clone_regular_file
-from cowtree.tree_types import PathClass, PathPolicy
+from cowtree.tree_types import DerivedHardlinks, PathClass, PathPolicy
 from cowtree.trees import clone_tree, populate_tree, scan_tree
 
 from .conftest import Repository
@@ -55,6 +55,43 @@ def test_tree_rejects_unsupported_entries(tmp_path: Path, kind: str) -> None:
         clone_tree(source=source, target=tmp_path / "copy", policy=PathPolicy())
     assert caught.value.code is CowtreeErrorCode.UNSUPPORTED_MODE
     assert not (tmp_path / "copy").exists()
+
+
+def test_opted_in_cache_hardlinks_become_independent_native_clones(
+    cow_repository: Repository, tmp_path: Path
+) -> None:
+    source = cow_repository.path
+    cache = source / "target"
+    cache.mkdir()
+    original = cache / "artifact"
+    original.write_bytes(b"compiled cache")
+    original.chmod(0o751)
+    os.link(original, cache / "alias")
+    metadata = original.stat()
+    policy = PathPolicy(derived=("target",), derived_hardlinks=DerivedHardlinks.CLONE)
+    target = tmp_path / "clone"
+    clone_tree(source=source, target=target, policy=policy)
+    first, second = target / "target/artifact", target / "target/alias"
+    assert first.read_bytes() == second.read_bytes() == b"compiled cache"
+    assert len({metadata.st_ino, first.stat().st_ino, second.stat().st_ino}) == 3
+    assert first.stat().st_nlink == second.stat().st_nlink == 1
+    assert first.stat().st_mode == metadata.st_mode
+    assert first.stat().st_mtime_ns == metadata.st_mtime_ns
+    first.write_bytes(b"private output")
+    assert second.read_bytes() == original.read_bytes() == b"compiled cache"
+    original.write_bytes(b"changed source cache")
+    assert (cache / "alias").read_bytes() == b"changed source cache"
+    assert second.read_bytes() == b"compiled cache"
+    assert first.read_bytes() == b"private output"
+
+
+def test_cache_opt_in_never_admits_source_hardlinks(tmp_path: Path) -> None:
+    (tmp_path / "source.rs").write_bytes(b"source")
+    (tmp_path / "target").mkdir()
+    os.link(tmp_path / "source.rs", tmp_path / "target/alias")
+    policy = PathPolicy(derived=("target",), derived_hardlinks=DerivedHardlinks.CLONE)
+    with pytest.raises(CowtreeError, match=r"hard-linked file: source\.rs"):
+        scan_tree(root=tmp_path, policy=policy)
 
 
 @pytest.mark.parametrize("prefix", ["", "../cache", "/cache", "cache/", ".git", "a//b"])

@@ -16,3 +16,7 @@ CREATE TABLE proposals(leaf INTEGER NOT NULL, sequence INTEGER NOT NULL, input_h
  PRIMARY KEY(leaf,sequence));
 CREATE TABLE retained(version INTEGER PRIMARY KEY REFERENCES epochs(version));
 CREATE TABLE client_pins(object TEXT PRIMARY KEY);
+CREATE TABLE imports(singleton INTEGER PRIMARY KEY CHECK(singleton=1), root TEXT NOT NULL,
+ manifest_json TEXT NOT NULL);
+CREATE TABLE import_progress(singleton INTEGER PRIMARY KEY REFERENCES imports(singleton),
+ completed INTEGER NOT NULL CHECK(completed>=0), complete INTEGER NOT NULL CHECK(complete IN (0,1)));
