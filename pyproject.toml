@@ -67,6 +67,10 @@ packages = ["src/cowtree"]
 # Editable builds leave a binary in src. Only the current Rust build may package it.
 exclude = ["src/cowtree/_libcowtree*.so", "src/cowtree/_libcowtree*.pyd"]
 
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/crates", "/scripts/build_hook.py", "/Cargo.toml", "/Cargo.lock", "/README", "/LICENSE", "/rustfmt.toml", "/pyproject.toml"]
+exclude = ["*.so", "*.pyd", "__pycache__"]
+
 [tool.hatch.build.hooks.custom]
 path = "scripts/build_hook.py"
 sources = ["src"]

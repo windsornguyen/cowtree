@@ -15,4 +15,11 @@ class BuildHook(inline_tests.hatch.InlineTestsHook):
     def initialize(self, version: str, build_data: dict[str, BuildValue]) -> None:
         if version == "editable":
             return
+        included = build_data["force_include"]
+        if not isinstance(included, dict):
+            raise TypeError("Hatch must provide a force_include mapping")
+        original = set(included)
         super().initialize(version, build_data)
+        if self.target_name == "sdist":
+            for source in included.keys() - original:
+                included[source] = f"src/{included[source]}"
