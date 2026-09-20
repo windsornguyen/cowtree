@@ -33,6 +33,7 @@ class Arguments(argparse.Namespace):
     command: Command = Command.HELP
     path: Path | None = None
     branch: str | None = None
+    existing_branch: str | None = None
     commitish: str = "HEAD"
     detach: bool = False
     lock: bool = False
@@ -107,6 +108,7 @@ class WorktreeAddRequest:
     detach: bool = False
     lock: bool = False
     reason: str | None = None
+    existing_branch: str | None = None
 
     def __post_init__(self) -> None:
         """Reject invalid input fields before starting any filesystem operation."""
@@ -124,6 +126,7 @@ class WorktreeAddRequest:
                 )
         for name, text in (
             ("branch", self.branch),
+            ("existing_branch", self.existing_branch),
             ("commitish", self.commitish),
             ("reason", self.reason),
         ):
@@ -151,6 +154,14 @@ class WorktreeAddRequest:
             raise CowtreeError(
                 code=CowtreeErrorCode.INVALID_ARGUMENTS,
                 message="branch and detach are mutually exclusive",
+            )
+        if self.existing_branch is not None and self.branch is not None:
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, "existing_branch excludes branch"
+            )
+        if self.existing_branch is not None and self.detach:
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, "existing_branch excludes detach"
             )
         if self.reason is not None and not self.lock:
             raise CowtreeError(

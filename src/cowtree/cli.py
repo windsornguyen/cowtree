@@ -81,6 +81,7 @@ class CowtreeCLI:
         )
         mode = self.add_parser.add_mutually_exclusive_group()
         mode.add_argument("-b", dest="branch", metavar="NEW_BRANCH")
+        mode.add_argument("--branch", dest="existing_branch", metavar="EXISTING_BRANCH")
         mode.add_argument("--detach", "-d", action="store_true")
         self.add_parser.add_argument("--lock", action="store_true")
         self.add_parser.add_argument(
@@ -140,6 +141,7 @@ class CowtreeCLI:
             request = WorktreeAddRequest(
                 path=options.path,
                 branch=options.branch,
+                existing_branch=options.existing_branch,
                 commitish=options.commitish,
                 detach=options.detach,
                 lock=options.lock,
