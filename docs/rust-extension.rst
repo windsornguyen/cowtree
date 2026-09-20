@@ -1,58 +1,94 @@
-rust extension plan
-===================
+Native engine
+=============
 
-Keep the first release pure Python. That makes the CLI, API, errors, and
-benchmark contract easy to inspect.
+An agent changes one file in a checkout containing thousands. The filesystem
+allocates private storage for that write. The other worktrees keep their original
+bytes. Cowtree does not run a watcher or rewrite a private block map on each save.
 
-Add Rust only after benchmarks show the Python per-file loop is the bottleneck.
-The candidate hot path is narrow:
+Native clone APIs establish that sharing. Ordinary writes, truncation, atomic
+saves, and deletion then use the filesystem's own copy-on-write rules. This does
+not create a Cowtree checkpoint. Checkpointing remains an explicit managed
+operation, and file durability still depends on the caller's writes and syncs.
 
-* walk tracked Git paths
-* create parent directories
-* clone regular files with ``clonefile(2)`` or Linux reflinks
-* recreate symlinks
-* return a typed summary to Python
+Why Rust
+--------
 
-The Python layer owns Git command construction, CLI parsing, request dataclasses,
-and user-facing errors. ``cowtree.native`` contains the current syscall boundary.
+The kernel handles sharing for one file. Cowtree must still validate a repository,
+walk many paths, clone each file, preserve metadata, build the index, and undo
+owned changes if any step fails. ``libcowtree`` owns that complete standalone
+operation, so its Rust CLI and Python bindings cannot drift into different rules.
 
-Native contract
----------------
+Rust also owns snapshot traversal, hashing, policy checks, and materialization.
+The library does not reimplement Git or the filesystem. Git owns refs, indexes,
+and worktree registration. The kernel owns shared blocks and independent writes.
 
-Each clone operation receives a regular source file and an absent destination.
-It creates the destination exclusively, preserves its mode and modification time,
-and returns only after cloning finishes. A failed clone removes only the file it
-created. Cleanup failures identify the remaining path and preserve the original
-failure as their cause.
+Interfaces
+----------
 
-The current macOS binding declares the ``clonefile(2)`` argument and return types
-at its foreign function interface (FFI). Linux holds both file descriptors open
-through ``FICLONE`` and metadata application. Neither path substitutes a byte copy.
+``crates/libcowtree``
+    Required native engine. Typed requests select source, branch, and lock
+    policies. Errors retain the failed operation and operating-system cause.
+``crates/cowtree-cli``
+    Native ``cowtree`` and ``git-cowtree`` executables for standalone commands.
+    Neither embeds Python nor starts a Python process.
+``crates/cowtree-python``
+    PyO3 binding to the same engine, with the stable CPython 3.10 ABI.
+    Long operations release Python's interpreter lock. Creation checks Python
+    signals at cancellation points before returning or rolling back.
+``src/cowtree/core.py`` and ``src/cowtree/trees.py``
+    Typed Python records and native error translation. A missing extension is
+    an installation failure, not a request to select another implementation.
 
-A future Rust implementation must preserve that contract. Keep unsafe calls in
-one FFI module, own descriptors with resource types, and retain operating-system
-errors as typed sources. Keep module roots as documented exports. Unit tests stay
-beside their implementation; filesystem qualification still runs on real mounts.
+Managed publication and crash recovery still have a Python coordinator under
+``src/cowtree`` and a Rust SQLite authority in ``crates/cowtree-metadata``.
+The native CLI does not expose ``workspace`` commands yet. Use the Python
+compatibility command for them. Moving that coordinator into ``libcowtree`` is
+remaining work, not an optional acceleration mode.
 
-Packaging
----------
+Build and test
+--------------
 
-Use PyO3 with maturin if the native extension lands. PyO3 is the Rust binding
-layer for native Python modules, and maturin is the packaging tool that builds
-those modules into Python wheels.
+From the repository root::
 
-Keep the extension as a library, not a second CLI binary. Maturin documents that
-shipping both a binary and library can duplicate wheel size; a Python entrypoint
-calling one native module avoids that trap.
+    cargo build --locked --release -p cowtree-cli
+    ./target/release/cowtree doctor .
+    cargo test -p libcowtree
+    uv sync --group dev
+    uv run pytest -q
+    uv build
 
-Binary size budget
-------------------
+Run the existing command-contract tests against the native executable::
 
-The native module should stay boring:
+    COWTREE_TEST_BINARY="$PWD/target/release/cowtree" uv run pytest -q \
+        tests/test_cli.py tests/test_cli_json.py \
+        tests/test_existing_branch.py tests/test_committed_ref.py
 
-* no async runtime unless benchmarks prove it is needed
-* no Git implementation in Rust
-* no alternate fallback path
-* no broad dependency graph
+Hatch builds the Python package and strips inline tests from release artifacts.
+Maturin compiles the extension. Editable installs retain the source package.
+Source archives explicitly include build inputs and exclude local binaries.
 
-If the wheel grows materially, measure it in CI and document the tradeoff.
+Performance and qualification
+-----------------------------
+
+Use the same fixture for Git, Python bindings, and the native executable::
+
+    uv run python benchmarks/native.py --binary target/release/cowtree \
+        --files 512 --worktrees 4 --trials 3 --output /tmp/cowtree-native.json
+
+The harness rotates execution order and verifies every destination with Git.
+Creation time includes validation and registration, not only the clone syscall.
+Space savings do not imply lower latency. Git subprocesses and filesystem
+metadata can dominate even after the Python per-file loop is removed.
+
+The native engine has local APFS runtime coverage and Linux and Windows
+cross-compilation coverage. Cross-compilation does not qualify behavior on
+Btrfs, XFS, or ReFS. Repeat the mounted-filesystem tests before claiming parity
+with the older Python implementation's platform results.
+
+References
+----------
+
+* `Apple clonefile contract <https://github.com/apple-oss-distributions/xnu/blob/main/bsd/man/man2/clonefile.2>`_
+* `PyO3 packaging <https://pyo3.rs/v0.29.0/building-and-distribution.html>`_
+* `PyO3 signal handling <https://pyo3.rs/v0.29.0/faq.html#ctrl-c-doesnt-do-anything-while-my-rust-code-is-executing>`_
+* `Hatch build hooks <https://hatch.pypa.io/latest/plugins/build-hook/reference/>`_

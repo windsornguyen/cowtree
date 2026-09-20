@@ -1,36 +1,41 @@
 # libcowtree
 
-Agents edit normal files in normal Git worktrees. After a native clone, the
-filesystem tracks shared blocks and allocates private storage when either file
-is written. Cowtree does not intercept those writes or maintain a second block
-map. A saved file is working-tree state until an explicit capture records it.
+The native engine shared by the Rust CLI and Python bindings. The filesystem
+owns block sharing during edits. This library owns admission, traversal,
+cloning, metadata preservation, and cleanup of the state it creates.
 
-`libcowtree` is the shared Rust engine boundary. Its first operation is strict
-file cloning. Language interfaces must propagate failures and must never replace
-an unavailable clone with an ordinary copy.
+## Operations
 
-## State ownership
+- `add_worktree` locks the repository, pins a source commit, reserves an absent
+  destination, registers it with Git, clones tracked files, and checks the index.
+- `list_worktrees` and `remove_worktree` use the same repository lock. Removing
+  a worktree preserves its branch.
+- `clone_file` requires a regular source and an absent target. No byte-copy
+  substitute is permitted.
+- `scan_tree`, `clone_tree`, and `populate_tree` implement snapshot path policy
+  and content or metadata capture. These currently require Unix.
+- `inspect_path` tests actual clone support and independent writes.
 
-| State | Owner | When it changes |
-|---|---|---|
-| Shared file blocks | Host filesystem | Native clone and subsequent writes |
-| Branches, commits, indexes | Git | Git commands |
-| Working files | Editor or agent | Ordinary writes and atomic saves |
-| Retained checkpoints | Managed workspace | Explicit capture and retention |
-| Publication and recovery records | Rust metadata store | Validated durable transitions |
+An add owns only its new directories, registration, and newly created branch.
+Rollback retires the registration before deleting that branch with an expected
+commit ID. If another writer moves the branch, rollback preserves it and reports
+the unresolved cleanup. Cancellation uses the same path.
 
-Block sharing does not provide version history, checked publication, process
-isolation, or a multi-file transaction. The managed layer supplies its own
-checkpoint and publication contracts. Native cloning also does not flush a
-completed workspace to stable storage. The caller owns that durability boundary.
+## Ownership
 
-## Consolidation
+| State | Owner |
+| --- | --- |
+| Shared blocks and live-write isolation | Filesystem |
+| Refs, indexes, and worktree registrations | Git |
+| Standalone transaction and tree operations | This library |
+| Managed snapshot and publication records | `cowtree-metadata` |
+| Managed filesystem installation and recovery | Python coordinator, pending port |
 
-The CLI and Python bindings will call the same engine. Batch operations must
-own their file loops in Rust rather than crossing a language boundary per file.
-Python remains an integration surface. The Rust metadata crate remains the
-canonical owner of its existing durable state during the migration.
+`creation.rs` defines the standalone transaction. `platform/` contains clone
+primitives. `tree_scan.rs` and `tree_clone.rs` implement snapshot capture and
+materialization. `creation_tests.rs` injects failures only in test builds.
 
-The file primitive is implemented on macOS and Linux in this layer. Windows,
-batch operations, and language bindings must be qualified before replacing the
-existing callers. This crate does not yet replace the Python control plane.
+The repository's [native engine guide](../../docs/rust-extension.rst) covers
+packaging, benchmarks, and qualification limits. Live file edits are not
+automatic checkpoints, and standalone creation does not recover from SIGKILL
+or host power loss.

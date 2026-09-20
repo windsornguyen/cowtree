@@ -24,9 +24,10 @@ private storage for the changed data and leaves the others untouched.
 Start
 -----
 
-Python 3.10+, Git, and a filesystem with native cloning. From a clean checkout::
+Git and a filesystem with native cloning. Build the native CLI from this
+checkout with Rust 1.85+::
 
-    uv tool install git+https://github.com/windsornguyen/cowtree
+    cargo install --locked --path crates/cowtree-cli
     cowtree doctor .
     cowtree add -b scratch/idea ../wt/idea
     cowtree list --json
@@ -96,10 +97,10 @@ the branch. Add ``--help`` for options or ``--`` before option-like paths.
 Python operations live in ``cowtree.core``. Requests and results live in
 ``cowtree.types``::
 
-    add_worktree(request, runner=None) -> Worktree
-    list_all_worktrees(source=None, runner=None) -> list[Worktree]
-    remove_worktree(path, *, source=None, force=False, runner=None) -> None
-    inspect_path(path, runner=None) -> DoctorReport
+    add_worktree(request) -> Worktree
+    list_all_worktrees(source=None) -> list[Worktree]
+    remove_worktree(path, *, source=None, force=False) -> None
+    inspect_path(path) -> DoctorReport
 
 For example::
 
@@ -115,8 +116,13 @@ go to stderr. Exit status: 0 success, 1 operation failure, 2 invalid syntax.
 See `the full standalone contract <docs/standalone.rst>`_ for types, JSON
 shapes, source ownership, and cleanup limits.
 
-To reuse build caches, retain checkpoints, and publish changes after checks
-pass, use ``cowtree workspace`` and its Rust metadata service. Start with the `Cargo quickstart
+Both interfaces use ``libcowtree``. Python 3.10+ bindings are installed with
+``uv sync``. There is no Python replacement for a missing Rust extension.
+
+Managed workspaces still use the Python coordinator and Rust metadata service.
+Run ``uv run cowtree workspace`` from this checkout to reuse build caches,
+retain checkpoints, and publish after checks pass. The native CLI does not yet
+expose these commands. Start with the `Cargo quickstart
 <docs/cargo-workspaces.rst#first-workspace>`_ or the `managed API
 <docs/managed-workspaces.rst>`_. Managed Windows support is not implemented.
 Current qualification is for opt-in developer use, not mission-critical use.
@@ -133,7 +139,11 @@ Where to look
 `docs/production-readiness.rst <docs/production-readiness.rst>`_
     Deployment gates and what the current evidence does not establish.
 `src/cowtree/ <src/cowtree/>`_
-    Python API, CLI, native clones, and managed filesystem operations.
+    Python bindings, compatibility CLI, and managed filesystem coordination.
+`crates/libcowtree/ <crates/libcowtree/README.md>`_
+    Required Rust engine for standalone operations and snapshot trees.
+`crates/cowtree-cli/ <crates/cowtree-cli/>`_
+    Native cowtree and git-cowtree executables. No Python runtime.
 `crates/cowtree-metadata/ <crates/cowtree-metadata/README.md>`_
     Rust service that records checkpoints and coordinates publication.
 `tests/ <tests/>`_, `integration/ <integration/>`_, `mounted/ <mounted/>`_, `windows/ <windows/>`_

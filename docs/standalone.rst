@@ -84,10 +84,11 @@ existing directory and defaults to the current directory.
 Exit codes are ``0`` for success, ``1`` for an operation failure or unsupported
 doctor result, and ``2`` for invalid command syntax.
 
-``cowtree --version`` reports the installed package version. Add ``--json`` for
-``version`` and ``revision`` fields. The revision comes only from the installer's
-PEP 610 metadata. Wheels and editable installs without that metadata report null
-("unknown" in text), never the current repository's HEAD.
+``cowtree --version`` reports the compiled package version. Add ``--json`` for
+``version`` and ``revision`` fields. Native builds embed ``COWTREE_BUILD_REVISION``
+when the builder supplies it. The Python compatibility command reads the
+installer's PEP 610 metadata instead. Missing provenance is null ("unknown" in
+text), never the current repository's HEAD.
 
 Python API
 ----------
@@ -95,18 +96,15 @@ Python API
 Import the four public operations from ``cowtree.core`` and their request and
 result types from ``cowtree.types``. Their signatures are::
 
-    add_worktree(request: WorktreeAddRequest,
-                 runner: CommandRunner | None = None) -> Worktree
-    list_all_worktrees(source: Path | None = None,
-                      runner: CommandRunner | None = None) -> list[Worktree]
+    add_worktree(request: WorktreeAddRequest) -> Worktree
+    list_all_worktrees(source: Path | None = None) -> list[Worktree]
     remove_worktree(path: Path, *, source: Path | None = None,
-                    force: bool = False,
-                    runner: CommandRunner | None = None) -> None
-    inspect_path(path: Path,
-                 runner: CommandRunner | None = None) -> DoctorReport
+                    force: bool = False) -> None
+    inspect_path(path: Path) -> DoctorReport
 
-The optional ``CommandRunner`` from ``cowtree.exec`` supports command execution
-in tests. Callers normally omit it.
+These functions call the required Rust engine through PyO3. The old ``runner``
+argument is removed. Fault-injection tests now exercise the Rust transaction
+directly rather than replacing Python subprocess calls.
 
 ``WorktreeAddRequest`` is a frozen dataclass with this constructor::
 
@@ -317,8 +315,7 @@ selection, concurrency stress controls, and the limits of the tests.
 Integration tests live in ``tests/``. Inline tests live beside the code and are
 stripped from builds by ``inline-tests``. Install local hooks with
 ``uv run prek install``. See `benchmarks <../benchmarks/>`_ for benchmark fixtures
-and the `Rust extension proposal <rust-extension.rst>`_ for optional
-acceleration.
+and the `native engine guide <rust-extension.rst>`_ for ownership and packaging.
 
 Batched publication verification
 ---------------------------------
@@ -330,7 +327,7 @@ They validate a bounded protocol model and do not add worktree API operations.
 Local metadata authority
 ------------------------
 
-The optional Rust ``cowtree-metadata`` crate implements a single-host SQLite WAL
+The Rust ``cowtree-metadata`` crate implements a single-host SQLite WAL
 metadata authority with fenced path reservations, immutable snapshots, retry
 receipts, and retention. Its library and JSON operation contracts are documented
 in `crates/cowtree-metadata/README.md <../crates/cowtree-metadata/README.md>`_.
@@ -341,4 +338,6 @@ Run the complete publication example with::
 The standalone ``cowtree.core`` API does not use this backend. The managed
 ``cowtree.workspace.Workspace`` API uses it for publication and coordinates
 filesystem installation in Python. Calling the Rust authority directly changes
-only its logical view. Python installs files in the working directory.
+only its logical view. Python coordinates installation, using ``libcowtree`` for
+tree traversal, hashing, and native cloning. The remaining lifecycle port is
+separate from the standalone native CLI.
