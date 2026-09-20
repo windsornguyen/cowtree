@@ -40,6 +40,23 @@ capable volumes such as ReFS. Source and destination must share a filesystem.
 ``doctor`` tests actual cloning and write isolation, not just a filesystem name.
 Unsupported volumes fail before creating a worktree.
 
+For agents
+----------
+
+The installer also provides ``git-cowtree``, so agents can invoke everything
+through Git::
+
+    git cowtree add --committed -b agent/fix ../wt/fix HEAD
+    git cowtree list --json
+    git cowtree remove ../wt/fix
+
+Change the agent's worktree command template to ``git cowtree``. Its other
+Git commands stay the same. ``--committed`` starts from the selected commit
+while preserving uncommitted edits in the source checkout.
+
+See `agent setup <docs/agents.rst>`_ for a repo-local ``git wt`` alias,
+an instruction block for agents, and the differences from ``git worktree``.
+
 Measured space
 --------------
 
@@ -98,8 +115,8 @@ go to stderr. Exit status: 0 success, 1 operation failure, 2 invalid syntax.
 See `the full standalone contract <docs/standalone.rst>`_ for types, JSON
 shapes, source ownership, and cleanup limits.
 
-Warm build caches and checked publication use the separate ``cowtree workspace``
-API and Rust metadata service. Start with the `Cargo quickstart
+To reuse build caches, retain checkpoints, and publish changes after checks
+pass, use ``cowtree workspace`` and its Rust metadata service. Start with the `Cargo quickstart
 <docs/cargo-workspaces.rst#first-workspace>`_ or the `managed API
 <docs/managed-workspaces.rst>`_. Managed Windows support is not implemented.
 Current qualification is for opt-in developer use, not mission-critical use.
@@ -118,7 +135,7 @@ Where to look
 `src/cowtree/ <src/cowtree/>`_
     Python API, CLI, native clones, and managed filesystem operations.
 `crates/cowtree-metadata/ <crates/cowtree-metadata/README.md>`_
-    Rust SQLite authority, typed protocol, and durability tests.
+    Rust service that records checkpoints and coordinates publication.
 `tests/ <tests/>`_, `integration/ <integration/>`_, `mounted/ <mounted/>`_, `windows/ <windows/>`_
     Command contracts, authority integration, real filesystems, and Windows.
 `specs/ <specs/>`_
