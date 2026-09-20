@@ -27,6 +27,8 @@ try {
     $env:COWTREE_NTFS_TEST = Join-Path $env:RUNNER_TEMP "cowtree-ntfs"
     uv run --no-sync pytest -q windows --basetemp R:\cowtree-tests
     if ($LASTEXITCODE -ne 0) { throw "Native Windows checks failed" }
+    uv run --no-sync cowtree doctor R:\
+    if ($LASTEXITCODE -ne 0) { throw "Installed standalone CLI failed" }
 } finally {
     if (Test-Path $image) {
         @(
