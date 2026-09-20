@@ -80,10 +80,16 @@ Creation time includes validation and registration, not only the clone syscall.
 Space savings do not imply lower latency. Git subprocesses and filesystem
 metadata can dominate even after the Python per-file loop is removed.
 
-The native engine has local APFS runtime coverage and Linux and Windows
-cross-compilation coverage. Cross-compilation does not qualify behavior on
-Btrfs, XFS, or ReFS. Repeat the mounted-filesystem tests before claiming parity
-with the older Python implementation's platform results.
+The `native qualification run at dfd1dda
+<https://github.com/windsornguyen/cowtree/actions/runs/35514459984>`_ passes the
+Linux filesystem matrix and Python 3.10-3.14 tests on Linux and macOS. On each
+Windows architecture, it passes 23 Python-boundary tests, 18 Rust engine tests,
+and 12 native-executable tests. The Windows hosts are x64 Server 2025/ReFS and
+ARM64 Windows 11/Dev Drive.
+
+Those Windows results qualify standalone commands. They do not establish
+managed-workspace ownership, process supervision, or durability on Windows.
+The managed coordinator remains POSIX-only until that separate port is qualified.
 
 References
 ----------
