@@ -74,8 +74,8 @@ def clonefile(source: Path, target: Path) -> None:
 
 def reflink(source: Path, target: Path) -> None:
     """Clone with Linux FICLONE and clean up the owned destination on failure."""
-    if sys.platform != "linux":
-        raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, "FICLONE requires Linux")
+    if sys.platform == "win32":
+        raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, "FICLONE is unavailable on Windows")
     import fcntl
 
     with source.open("rb") as src, target.open("xb") as dst:
