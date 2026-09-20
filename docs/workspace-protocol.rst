@@ -2,7 +2,7 @@ Versioned workspace protocol
 ============================
 
 Status: design proposal. The implemented API remains the four worktree
-operations in the `README <../README.rst>`_. This document proposes a metadata
+operations in the `README <../README>`_. This document proposes a metadata
 coordinator for many editable worktrees, called leaves. It does not add a
 metadata service, distributed filesystem, or new CLI commands.
 
