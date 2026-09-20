@@ -51,6 +51,18 @@ export const metadata = workflow(
           ]),
           uv,
           run("Install Python integration dependencies", "uv", ["sync", "--locked", "--group", "test"]),
+          run("Build native command interfaces", "cargo", [
+            "+1.97.1", "build", "--locked", "--release", "-p", "cowtree-cli",
+          ]),
+          {
+            ...run("Check native commands and Git aliases", "uv", [
+              "run", "--no-sync", "pytest", "-q", "tests/test_cli.py", "tests/test_cli_json.py",
+              "tests/test_existing_branch.py", "tests/test_committed_ref.py", "tests/test_git_extension.py",
+            ]),
+            env: {
+              COWTREE_TEST_BINARY: expr<string>("format('{0}/target/release/cowtree', github.workspace)"),
+            },
+          },
           run("Test Python metadata integration", "uv", ["run", "--no-sync", "pytest", "-q", "integration"]),
           {
             ...run("Test APFS workspace integration", "uv", ["run", "--no-sync", "pytest", "-q", "mounted"]),

@@ -1,6 +1,6 @@
 import { always, defineMatrix, expr, job, workflow } from "@dedalus-labs/hollywood";
 import { readFileSync } from "node:fs";
-import { checkout, run, setupNode, uv } from "./steps.ts";
+import { checkout, run, rust, setupNode, uv } from "./steps.ts";
 import { nativeFilesystems } from "./native.ts";
 import { uses } from "@dedalus-labs/hollywood";
 
@@ -18,6 +18,7 @@ export const ci = workflow(
     name: "CI",
     on: { push: { branches: ["main"] }, pull_request: {} },
     permissions: { contents: "read" },
+    env: { RUSTUP_TOOLCHAIN: "1.97.1" },
     jobs: {
       workflows: job({
         name: "Generated workflows",
@@ -67,6 +68,7 @@ export const ci = workflow(
             "working-directory": ".tools/atlas-source/cmd/atlas",
           },
           uv,
+          rust,
           run("Install Python test dependencies", "uv", ["sync", "--locked", "--group", "test"]),
           run("Check generated SQLite schema", "uv", [
             "run", "python", "scripts/schema.py", "check", "--atlas", ".tools/atlas",
@@ -81,6 +83,7 @@ export const ci = workflow(
         "runs-on": "ubuntu-latest",
         steps: [
           checkout,
+          rust,
           uv,
           run("Install Python", "uv", ["python", "install", "3.10"]),
           run("Install dependencies", "uv", [
@@ -90,6 +93,8 @@ export const ci = workflow(
             "lint",
             "--group",
             "bench",
+            "--group",
+            "test",
           ]),
           run("Ruff lint", "uv", ["run", "ruff", "check", "."]),
           run("Ruff format", "uv", ["run", "ruff", "format", "--check", "."]),
@@ -104,6 +109,7 @@ export const ci = workflow(
         strategy: { "fail-fast": false, matrix: python },
         steps: [
           checkout,
+          rust,
           uv,
           run("Install Python", "uv", ["python", "install", python["python-version"]]),
           run("Install dependencies", "uv", ["sync", "--locked", "--group", "test"]),
@@ -119,6 +125,7 @@ export const ci = workflow(
         "runs-on": "ubuntu-latest",
         steps: [
           checkout,
+          rust,
           uv,
           run("Install Python", "uv", ["python", "install", "3.10"]),
           run("Build package", "uv", ["build"]),
@@ -136,6 +143,7 @@ export const ci = workflow(
         "timeout-minutes": 15,
         steps: [
           checkout,
+          rust,
           setupUv,
           run("Install Python", "uv", ["python", "install", "3.10"]),
           run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
@@ -148,9 +156,13 @@ export const ci = workflow(
         name: "Windows ARM64 Dev Drive cloning",
         "runs-on": "windows-11-arm",
         "timeout-minutes": 15,
-        env: { UV_PYTHON: "cpython-3.14-windows-aarch64-none" },
+        env: {
+          UV_PYTHON: "cpython-3.14-windows-aarch64-none",
+          RUSTUP_TOOLCHAIN: "1.97.1-aarch64-pc-windows-msvc",
+        },
         steps: [
           checkout,
+          rust,
           setupUv,
           run("Install native Python", "uv", ["python", "install", "cpython-3.14-windows-aarch64-none"]),
           run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
@@ -169,6 +181,7 @@ export const ci = workflow(
         "timeout-minutes": 15,
         steps: [
           checkout,
+          rust,
           setupUv,
           {
             uses: "actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",

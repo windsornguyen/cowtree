@@ -43,6 +43,14 @@ jobs:
       - name: Install Python integration dependencies
         run: uv sync --locked --group test
         shell: bash
+      - name: Build native command interfaces
+        run: cargo +1.97.1 build --locked --release -p cowtree-cli
+        shell: bash
+      - name: Check native commands and Git aliases
+        run: uv run --no-sync pytest -q tests/test_cli.py tests/test_cli_json.py tests/test_existing_branch.py tests/test_committed_ref.py tests/test_git_extension.py
+        env:
+          COWTREE_TEST_BINARY: ${{ format('{0}/target/release/cowtree', github.workspace) }}
+        shell: bash
       - name: Test Python metadata integration
         run: uv run --no-sync pytest -q integration
         shell: bash
