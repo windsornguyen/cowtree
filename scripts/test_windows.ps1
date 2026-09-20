@@ -5,7 +5,8 @@ $script = Join-Path $env:RUNNER_TEMP "cowtree-diskpart.txt"
 if (Test-Path R:\) { throw "Drive R is already in use" }
 if (Test-Path $image) { throw "Test disk already exists" }
 @(
-    ('create vdisk file="{0}" maximum=1024 type=expandable' -f $image)
+    # The Server 2025 ReFS formatter rejected the 1 GiB fixture. Allocate 8 GiB virtually.
+    ('create vdisk file="{0}" maximum=8192 type=expandable' -f $image)
     ('select vdisk file="{0}"' -f $image)
     "attach vdisk"
     "create partition primary"
