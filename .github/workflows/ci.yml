@@ -8,6 +8,8 @@ on:
   pull_request: {}
 permissions:
   contents: read
+env:
+  RUSTUP_TOOLCHAIN: 1.97.1
 jobs:
   workflows:
     name: Generated workflows
@@ -56,6 +58,11 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - name: Install Python test dependencies
         run: uv sync --locked --group test
         shell: bash
@@ -70,6 +77,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
           enable-cache: true
@@ -78,7 +90,7 @@ jobs:
         run: uv python install 3.10
         shell: bash
       - name: Install dependencies
-        run: uv sync --locked --group lint --group bench
+        run: uv sync --locked --group lint --group bench --group test
         shell: bash
       - name: Ruff lint
         run: uv run ruff check .
@@ -108,6 +120,11 @@ jobs:
           - "3.14"
     steps:
       - uses: actions/checkout@v6
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
           enable-cache: true
@@ -131,6 +148,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
           enable-cache: true
@@ -156,6 +178,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       - name: Install Python
         run: uv python install 3.10
@@ -172,8 +199,14 @@ jobs:
     timeout-minutes: 15
     env:
       UV_PYTHON: cpython-3.14-windows-aarch64-none
+      RUSTUP_TOOLCHAIN: 1.97.1-aarch64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v6
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       - name: Install native Python
         run: uv python install cpython-3.14-windows-aarch64-none
@@ -193,6 +226,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: Install Rust
+        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
+        shell: bash
+        env:
+          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:

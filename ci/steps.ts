@@ -1,4 +1,4 @@
-import { command, type GitHubCommandStep } from "@dedalus-labs/hollywood";
+import { command, expr, type GitHubCommandStep } from "@dedalus-labs/hollywood";
 
 export const checkout = { uses: "actions/checkout@v6" } as const;
 export const uv = {
@@ -12,3 +12,7 @@ export const setupNode = {
 export function run(name: string, file: string, args: readonly string[]): GitHubCommandStep {
   return { name, run: command({ file, args }) };
 }
+
+export const rust = run("Install Rust", "rustup", [
+  "toolchain", "install", expr<string>("env.RUSTUP_TOOLCHAIN"), "--profile", "minimal",
+]);

@@ -62,7 +62,10 @@ test("the Python and SQLite matrices and production test-hook checks stay intact
   assert.equal(ci.jobs.windows["runs-on"], "windows-2025");
   assert.equal(ci.jobs.windows["timeout-minutes"], 15);
   assert.equal(ci.jobs["windows-arm"]["runs-on"], "windows-11-arm");
-  assert.deepEqual(ci.jobs["windows-arm"].env, { UV_PYTHON: "cpython-3.14-windows-aarch64-none" });
+  assert.deepEqual(ci.jobs["windows-arm"].env, {
+    UV_PYTHON: "cpython-3.14-windows-aarch64-none",
+    RUSTUP_TOOLCHAIN: "1.97.1-aarch64-pc-windows-msvc",
+  });
   assert.deepEqual(ci.jobs.test.strategy.matrix.values, {
     os: ["ubuntu-latest", "macos-latest"],
     "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],
@@ -82,6 +85,21 @@ test("the Python and SQLite matrices and production test-hook checks stay intact
   assert.equal(example.env.COWTREE_PAUSE_AT, "after-upload-pin");
   assert.deepEqual(ci.permissions, { contents: "read" });
   assert.deepEqual(metadata.permissions, { contents: "read" });
+});
+
+test("extension builds select Rust before Python installation and native CLI tests select the binary", () => {
+  assert.deepEqual(ci.env, { RUSTUP_TOOLCHAIN: "1.97.1" });
+  for (const name of ["schema", "lint", "test", "build", "windows", "windows-arm", "specification"] as const) {
+    const steps = ci.jobs[name].steps;
+    const rust = steps.findIndex((step) => "run" in step && step.run?.kind === "command" && step.run.file === "rustup");
+    const build = steps.findIndex((step) => "run" in step && step.run?.kind === "command" && step.run.file === "uv");
+    assert.ok(rust >= 0 && build > rust, name);
+  }
+  const native = metadata.jobs.metadata.steps.find(
+    (step) => "env" in step && step.env && "COWTREE_TEST_BINARY" in step.env,
+  );
+  assert.ok(native && "run" in native && native.run?.kind === "command");
+  assert.ok(native.run.args.includes("tests/test_git_extension.py"));
 });
 
 test("schema checks build pinned community source and verify generated SQL", async () => {
