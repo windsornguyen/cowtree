@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import errno
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -15,12 +16,17 @@ from cowtree.types import WorktreeAddRequest
 
 
 def run_cli(arguments: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    command = [
-        sys.executable,
-        "-c",
-        "from cowtree.cli import main; raise SystemExit(main())",
-        *arguments,
-    ]
+    binary = os.environ.get("COWTREE_TEST_BINARY")
+    command = (
+        [binary, *arguments]
+        if binary is not None
+        else [
+            sys.executable,
+            "-c",
+            "from cowtree.cli import main; raise SystemExit(main())",
+            *arguments,
+        ]
+    )
     environment = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
     result = subprocess.run(  # noqa: S603
         command,
@@ -71,7 +77,7 @@ def run_cli(arguments: list[str], cwd: Path) -> subprocess.CompletedProcess[str]
 def test_malformed_cli_arguments_fail(arguments: list[str], tmp_path: Path) -> None:
     result = run_cli(arguments=arguments, cwd=tmp_path)
     assert result.returncode == 2
-    assert "usage:" in result.stderr
+    assert "usage:" in result.stderr.lower() or "--help" in result.stderr
     assert "Traceback" not in result.stderr
 
 
@@ -91,7 +97,7 @@ def test_malformed_cli_arguments_fail(arguments: list[str], tmp_path: Path) -> N
 def test_help_succeeds_without_a_repository(arguments: list[str], tmp_path: Path) -> None:
     result = run_cli(arguments=arguments, cwd=tmp_path)
     assert result.returncode == 0
-    assert "usage: cowtree" in result.stdout
+    assert "usage: cowtree" in result.stdout.lower()
     assert not result.stderr
 
 
@@ -153,9 +159,9 @@ def test_cli_preserves_paths_locks_and_delimiters(tmp_path: Path) -> None:
     assert added.reason == reason
     result = run_cli(arguments=["list", "--json", "--", str(source)], cwd=tmp_path)
     assert result.returncode == 0, result.stderr
-    assert (
-        result.stdout == "[" + ",".join(worktree.to_json_text() for worktree in worktrees) + "]\n"
-    )
+    assert json.loads(result.stdout) == [
+        json.loads(worktree.to_json_text()) for worktree in worktrees
+    ]
 
     result = run_cli(arguments=["remove", "--", target_name], cwd=source)
     assert result.returncode == 1
@@ -198,9 +204,9 @@ def test_cli_round_trips_non_utf8_paths_when_supported(tmp_path: Path) -> None:
     result = run_cli(arguments=["list", "--json", "--", str(source)], cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     worktrees = list_all_worktrees(source=source)
-    assert (
-        result.stdout == "[" + ",".join(worktree.to_json_text() for worktree in worktrees) + "]\n"
-    )
+    assert json.loads(result.stdout) == [
+        json.loads(worktree.to_json_text()) for worktree in worktrees
+    ]
     assert worktrees[0].path == source
 
 

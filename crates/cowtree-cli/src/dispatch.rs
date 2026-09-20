@@ -45,12 +45,17 @@ pub fn run() -> io::Result<ExitCode> {
             output::failure("output_failed", &error.to_string(), json)?;
             Ok(ExitCode::FAILURE)
         }
+        Err(Failure::Signal(error)) => {
+            output::failure("command_failed", &error.to_string(), json)?;
+            Ok(ExitCode::FAILURE)
+        }
     }
 }
 
 enum Failure {
     Operation(WorktreeError),
     Output(io::Error),
+    Signal(ctrlc::Error),
 }
 impl From<WorktreeError> for Failure {
     fn from(error: WorktreeError) -> Self {
@@ -81,7 +86,7 @@ fn execute(options: Arguments) -> Result<u8, Failure> {
             let request = arguments.request();
             let prepared = PreparedAdd::new(&request)?;
             let cancellation = request.cancellation.clone();
-            ctrlc::set_handler(move || cancellation.cancel()).map_err(io::Error::other)?;
+            ctrlc::set_handler(move || cancellation.cancel()).map_err(Failure::Signal)?;
             let tree = prepared.run()?;
             if options.json {
                 output::success("add", tree)?;
@@ -91,19 +96,7 @@ fn execute(options: Arguments) -> Result<u8, Failure> {
         }
         Some(Operation::List { source }) => {
             let trees = list_worktrees(source.as_deref())?;
-            if options.json {
-                output::write_json(&trees, &mut io::stdout().lock())?;
-            } else {
-                for tree in trees {
-                    write!(io::stdout().lock(), "{}", tree.path.display())?;
-                    if let Some(branch) = tree.branch {
-                        write!(io::stdout().lock(), " {branch}")?;
-                    } else if tree.detached {
-                        write!(io::stdout().lock(), " detached")?;
-                    }
-                    writeln!(io::stdout().lock())?;
-                }
-            }
+            output::worktrees(&trees, options.json)?;
         }
         Some(Operation::Remove { path, force }) => {
             remove_worktree(&path, None, force)?;

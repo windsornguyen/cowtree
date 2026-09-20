@@ -5,6 +5,23 @@
 use serde::Serialize;
 use std::io::{self, Write};
 
+pub(crate) fn worktrees(trees: &[cowtree::Worktree], json: bool) -> io::Result<()> {
+    let mut output = io::stdout().lock();
+    if json {
+        return write_json(&trees, &mut output);
+    }
+    for tree in trees {
+        write!(output, "{}", tree.path.display())?;
+        if let Some(branch) = &tree.branch {
+            write!(output, " {branch}")?;
+        } else if tree.detached {
+            write!(output, " detached")?;
+        }
+        writeln!(output)?;
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub(crate) struct Success<T> {
     status: &'static str,
