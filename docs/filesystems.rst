@@ -94,8 +94,10 @@ extent accounting appropriate to that filesystem.
 Windows qualification
 ---------------------
 
-CI provisions an owned 8 GiB expandable ReFS disk on Windows Server 2025 and
-runs ``windows/`` plus the installed ``cowtree doctor`` entry point. The suite
+CI provisions owned expandable disks: 8 GiB ReFS on Windows Server 2025 x64
+and 64 GiB Dev Drive on Windows 11 ARM64. The ARM64 job explicitly selects and
+checks a native interpreter. Both jobs run ``windows/`` plus the installed
+``cowtree doctor`` entry point. The suite
 checks file and directory symlinks (including dangling directory links), Git
 executable-mode records, concurrent operations, cancellation cleanup, and
 cross-volume refusal. No managed-lifecycle support is inferred from these tests.
