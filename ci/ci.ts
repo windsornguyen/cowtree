@@ -148,12 +148,16 @@ export const ci = workflow(
         name: "Windows ARM64 Dev Drive cloning",
         "runs-on": "windows-11-arm",
         "timeout-minutes": 15,
-        env: { UV_PYTHON: "3.14" },
+        env: { UV_PYTHON: "cpython-3.14-windows-aarch64-none" },
         steps: [
           checkout,
           setupUv,
-          run("Install Python", "uv", ["python", "install", "3.14"]),
+          run("Install native Python", "uv", ["python", "install", "cpython-3.14-windows-aarch64-none"]),
           run("Install test dependencies", "uv", ["sync", "--locked", "--no-default-groups", "--group", "test"]),
+          run("Verify native ARM64 interpreter", "uv", [
+            "run", "--no-sync", "python", "-c",
+            "import sysconfig; actual = sysconfig.get_platform(); print(actual); assert actual == 'win-arm64', actual",
+          ]),
           run("Check Dev Drive isolation and NTFS refusal", "pwsh", [
             "-NoProfile", "-File", "scripts/test_windows.ps1", "-DevDrive",
           ]),

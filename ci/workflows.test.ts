@@ -62,7 +62,7 @@ test("the Python and SQLite matrices and production test-hook checks stay intact
   assert.equal(ci.jobs.windows["runs-on"], "windows-2025");
   assert.equal(ci.jobs.windows["timeout-minutes"], 15);
   assert.equal(ci.jobs["windows-arm"]["runs-on"], "windows-11-arm");
-  assert.deepEqual(ci.jobs["windows-arm"].env, { UV_PYTHON: "3.14" });
+  assert.deepEqual(ci.jobs["windows-arm"].env, { UV_PYTHON: "cpython-3.14-windows-aarch64-none" });
   assert.deepEqual(ci.jobs.test.strategy.matrix.values, {
     os: ["ubuntu-latest", "macos-latest"],
     "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],

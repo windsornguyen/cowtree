@@ -171,15 +171,18 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 15
     env:
-      UV_PYTHON: "3.14"
+      UV_PYTHON: cpython-3.14-windows-aarch64-none
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-      - name: Install Python
-        run: uv python install 3.14
+      - name: Install native Python
+        run: uv python install cpython-3.14-windows-aarch64-none
         shell: bash
       - name: Install test dependencies
         run: uv sync --locked --no-default-groups --group test
+        shell: bash
+      - name: Verify native ARM64 interpreter
+        run: uv run --no-sync python -c 'import sysconfig; actual = sysconfig.get_platform(); print(actual); assert actual == '"'"'win-arm64'"'"', actual'
         shell: bash
       - name: Check Dev Drive isolation and NTFS refusal
         run: pwsh -NoProfile -File scripts/test_windows.ps1 -DevDrive
