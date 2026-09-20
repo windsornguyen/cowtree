@@ -28,6 +28,12 @@ path; it does not silently choose a different backend. Git author identity must
 be configured because snapshots create source commits. A managed leaf remains
 detached and locked in Git; use the managed commands for its lifecycle.
 
+``cowtree workspace --root STORE version`` reports the CLI and configured
+metadata executable separately without opening the authority store. The backend
+supports ``cowtree-metadata --version --json``; older binaries reject this query
+without creating a store. Build with ``COWTREE_BUILD_REVISION`` set to a known
+source identity to include it. An unstamped binary reports a null revision.
+
 Source and caches
 -----------------
 
