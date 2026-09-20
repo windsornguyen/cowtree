@@ -13,10 +13,10 @@ import tempfile
 
 from pydantic import TypeAdapter
 
+from cowtree.core import inspect_path
 from cowtree.durable import sync_directory, write_record
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
-from cowtree.fs import doctor
 from cowtree.git import GitRepository
 from cowtree.initial_import import ImportProgress, InitialImport
 from cowtree.metadata import Metadata
@@ -155,7 +155,7 @@ class Workspace:
             )
         root = root.resolve()
         policy = admit(repository=repository, policy=policy)
-        if not doctor(path=root.parent).supported:
+        if not inspect_path(path=root.parent).supported:
             raise CowtreeError(
                 CowtreeErrorCode.COW_UNAVAILABLE, "workspace parent lacks native CoW"
             )

@@ -61,3 +61,8 @@ def inspect_path(path: Path) -> DoctorReport:
     record = invoke(operation=partial(_libcowtree.inspect_path, path=path))
     result = DOCTOR.validate_python(json.loads(record))
     return result
+
+
+def clone_regular_file(source: Path, target: Path) -> None:
+    """Create one private native clone for managed installation."""
+    invoke(operation=partial(_libcowtree.clone_file, source=source, target=target))

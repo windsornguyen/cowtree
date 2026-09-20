@@ -34,7 +34,8 @@ def classify(path: str, policy: PathPolicy) -> PathClass:
 def capture_mode(capture: CaptureMode) -> str:
     if not isinstance(capture, CaptureMode):
         raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"invalid capture mode: {capture!r}")
-    return capture.value
+    mode = capture.value
+    return mode
 
 
 def scan_tree(

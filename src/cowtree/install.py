@@ -14,10 +14,10 @@ from pathlib import Path
 import shutil
 import stat
 
+from cowtree.core import clone_regular_file
 from cowtree.durable import sync_directory, sync_file, write_record
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.metadata_types import Entry, EntryKind, Record
-from cowtree.native import clone_regular_file
 
 
 class Change(Record):
