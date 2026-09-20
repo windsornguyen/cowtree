@@ -48,6 +48,7 @@ class Arguments(argparse.Namespace):
     json: bool = False
     force: bool = False
     source_mode: SourceMode = SourceMode.CHECKOUT
+    version: bool = False
 
 
 # --- Filesystem records ---

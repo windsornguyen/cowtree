@@ -18,6 +18,7 @@ from cowtree.cli_output import Failure, Success, json_requested
 from cowtree.core import add_worktree, inspect_path, list_all_worktrees, remove_worktree
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.types import Arguments, Command, SourceMode, WorktreeAddRequest
+from cowtree.version import VersionInfo
 
 
 if TYPE_CHECKING:
@@ -65,6 +66,8 @@ class CowtreeCLI:
     def __init__(self) -> None:
         """Configure each supported command without accepting arbitrary Git flags."""
         self.parser = Parser(prog="cowtree", allow_abbrev=False)
+        self.parser.add_argument("--version", action="store_true")
+        self.parser.add_argument("--json", action="store_true", help="structured version output")
         commands = self.parser.add_subparsers(title="commands")
         commands.add_parser("workspace", help="manage warm workspaces and checked publication")
         parsers: dict[Command, argparse.ArgumentParser] = {}
@@ -72,7 +75,7 @@ class CowtreeCLI:
             parser = commands.add_parser(command.value, allow_abbrev=False)
             parser.set_defaults(command=command)
             if command is not Command.HELP:
-                parser.add_argument("--json", action="store_true")
+                parser.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
             parsers[command] = parser
 
         self.add_parser = parsers[Command.ADD]
@@ -115,6 +118,19 @@ class CowtreeCLI:
         options = Arguments()
         try:
             self.parser.parse_args(args=argv, namespace=options)
+            if options.version:
+                if options.command is not Command.HELP:
+                    self.parser.error("--version cannot be combined with an operation")
+                version = VersionInfo.installed()
+                revision = "unknown" if version.revision is None else version.revision
+                message = (
+                    version.model_dump_json()
+                    if options.json
+                    else f"cowtree {version.version} (revision {revision})"
+                )
+                print(message)
+                code = 0
+                return code
             match options.command:
                 case Command.ADD:
                     code = self.add(options=options)
