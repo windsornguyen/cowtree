@@ -27,6 +27,9 @@ compiled caches and explicit derived hard-link handling. The
 `BSMR boundary <docs/bsmr-workspaces.rst>`_ keeps action-cache authority with BSMR.
 The `performance report <docs/performance.rst>`_ separates import, fresh forks,
 prepared-leaf lookup, and compiler reuse, with scripts to reproduce each result.
+The `production readiness gates <docs/production-readiness.rst>`_ define the
+evidence needed for deployment approval. Current qualification supports opt-in
+developer use; it does not approve mission-critical use or a default BSMR rollout.
 
 `Build-cache measurements <docs/warm-cache.rst>`_ demonstrate actual compiler
 reuse and report total creation cost. `Lifecycle qualification

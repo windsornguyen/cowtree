@@ -131,12 +131,6 @@ and run the Rust crash suite and ``integration`` tests as well. Default containe
 storage and a successful container launch are insufficient filesystem evidence.
 Generate any new CI lanes from ``ci/*.ts`` through Hollywood Actions.
 
-The September 19, 2026 local assessment found Docker and Apple Container CLIs,
-but Docker API access and ``container system status`` were denied by the sandbox.
-No Linux filesystem or Windows ReFS execution result was obtained from those
-probes. Hosted results for an earlier revision do not qualify a new backend or
-the current import changes; obtain results for the exact tested revision.
-
 Per-path installation continues to require quiescent builders: old descriptors
 and mappings can retain the replaced files while new lookups see the replacement.
 Keep process-crash, machine-crash, and storage-power-loss qualification as separate

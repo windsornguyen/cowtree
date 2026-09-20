@@ -39,12 +39,12 @@ compiler freshness, build-script environment changes, derived hard links and
 source/sibling isolation. The `import benchmark <initial-import.rst>`_ records
 protocol work and elapsed time.
 
-Make Cowtree a default BSMR materializer only after these suites pass on the
-actual worker filesystem with production Cargo inputs. Keep the adapter opt-in
-until Linux reflink and Windows ReFS have their own native receipts. Linux
-qualification uses the existing image matrix; Windows additionally requires the
-complete `platform adapter <portability-roadmap.rst>`_. Merely adding the ReFS
-clone ioctl does not port locks, publication, path lookup and recovery.
+Default adoption requires the `production gates <production-readiness.rst>`_
+for the exact worker operating system, filesystem, storage configuration, and
+production build inputs. Qualify each additional deployment platform separately.
+Windows support is not a prerequisite for an APFS-only deployment. A Windows
+deployment does require the complete `platform adapter <portability-roadmap.rst>`_;
+a ReFS clone probe does not qualify locking, publication, or recovery.
 
 There is no BSMR action-cache implementation in Cowtree, and no default BSMR
 cutover in this change. Its public Python/JSON lifecycle is the materialization

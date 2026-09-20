@@ -91,12 +91,18 @@ local development tools and ``--optional`` for published extras.
 
 Do not edit ``uv.lock`` by hand.
 
-Benchmark changes should also regenerate plots:
+Benchmark changes should regenerate their evidence outside the checkout:
 
 ::
 
-    $ uv run python benchmarks/run.py --preset quick --runs 2
-    $ uv run python benchmarks/plot.py benchmarks/results/latest.json
+    $ uv run python benchmarks/run.py --preset quick --runs 2 --out /tmp/cowtree-bench/results.json
+    $ uv run python benchmarks/plot.py /tmp/cowtree-bench/results.json --out-dir /tmp/cowtree-bench/plots
+
+Commit reproduction scripts and reviewed analysis in ``docs/``. Do not commit
+generated measurements, per-run reports, logs, or plots. The default output
+directories ``benchmarks/results/`` and ``benchmarks/plots/`` are ignored.
+Release qualification evidence belongs in a retained artifact archive with
+checksums and source identities; see `production gates <docs/production-readiness.rst>`_.
 
 Scope
 -----
