@@ -22,6 +22,7 @@ from cowtree.metadata_types import BatchCandidate, Record, Request
 from cowtree.publications import Publications
 from cowtree.resolutions import Choice, Resolutions
 from cowtree.seals import Seals
+from cowtree.submodule_types import SubmodulePolicy
 from cowtree.tree_types import DerivedHardlinks, PathPolicy
 from cowtree.version import WorkspaceVersions
 from cowtree.views import Views
@@ -71,6 +72,7 @@ class Options(argparse.Namespace):
     derived: list[str] = field(default_factory=list)
     ephemeral: list[str] = field(default_factory=list)
     derived_hardlinks: DerivedHardlinks = DerivedHardlinks.REJECT
+    submodules: SubmodulePolicy = SubmodulePolicy.REJECT
     paths: list[str] = field(default_factory=list)
     command: list[str] = field(default_factory=list)
     identities: list[int] = field(default_factory=list)
@@ -114,6 +116,12 @@ def parser() -> Parser:
             command.add_argument("--binary", type=Path, required=True)
             command.add_argument("--derived", action="append", default=[])
             command.add_argument("--ephemeral", action="append", default=[])
+            command.add_argument(
+                "--submodules",
+                type=SubmodulePolicy,
+                choices=list(SubmodulePolicy),
+                default=SubmodulePolicy.REJECT,
+            )
             command.add_argument(
                 "--derived-hardlinks",
                 type=DerivedHardlinks,
@@ -322,6 +330,7 @@ def run(argv: list[str]) -> int:
                     derived=tuple(options.derived),
                     ephemeral=tuple(options.ephemeral),
                     derived_hardlinks=options.derived_hardlinks,
+                    submodules=options.submodules,
                 ),
             )
             value = workspace.config.model_dump(mode="json")

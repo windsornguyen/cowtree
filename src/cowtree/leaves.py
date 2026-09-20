@@ -169,7 +169,7 @@ class Leaves:
         ):
             raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "initializing leaf was dropped")
         entries = scan_tree(root=record.path, policy=node.policy)
-        if source_manifest(root=record.path, entries=entries) != node.source:
+        if source_manifest(root=record.path, entries=entries, policy=node.policy) != node.source:
             raise CowtreeError(
                 CowtreeErrorCode.DIRTY_SOURCE, "leaf differs from its source snapshot"
             )

@@ -235,8 +235,10 @@ The portable source namespace uses UTF-8 NFC names and rejects case/Unicode alia
 non-directory prefix conflicts, reserved control names, hard links and special
 files. Symlink contents and executable mode are preserved; parent symlinks are
 not traversed. Rename is captured as deletion plus insertion. Empty directories
-may exist privately but are not published source entries. Sparse checkouts and
-submodules are unsupported.
+may exist privately but are not published source entries. Sparse checkouts are
+unsupported. Submodules are rejected by default. Explicit
+`pinned materialization <pinned-submodules.rst>`_ admits clean direct dependencies
+as read-only source in the private projection, without nested Git control state.
 
 Qualification
 -------------

@@ -12,15 +12,18 @@ import uuid
 
 from cowtree.durable import sync_directory, sync_tree, write_record
 from cowtree.errors import CowtreeError, CowtreeErrorCode
-from cowtree.metadata_types import Entry, EntryKind
+from cowtree.metadata_types import Entry, EntryKind, ReadOnlyKind, ReadOnlyScope
 from cowtree.path_policy import check_aliases, working_policy
 from cowtree.projection import GitProjection, ProjectionSpec
+from cowtree.submodules import materialize, scope, verify_manifest
 from cowtree.tree_types import PathClass, PathPolicy, TreeEntry, TreeKind
 from cowtree.trees import clone_tree, scan_tree
 from cowtree.workspace_types import Node
 
 
-def source_manifest(root: Path, entries: tuple[TreeEntry, ...]) -> dict[str, Entry]:
+def source_manifest(
+    root: Path, entries: tuple[TreeEntry, ...], policy: PathPolicy
+) -> dict[str, Entry]:
     """Select source entries and verify their portable UTF-8 spelling."""
     result: dict[str, Entry] = {}
     for entry in entries:
@@ -50,7 +53,15 @@ def source_manifest(root: Path, entries: tuple[TreeEntry, ...]) -> dict[str, Ent
             kind = EntryKind.SYMLINK
         else:
             kind = EntryKind.EXECUTABLE if entry.mode & 0o100 else EntryKind.FILE
-        result[name] = Entry(object=entry.digest, kind=kind)
+        protected = scope(name, policy)
+        mode = (
+            kind
+            if protected is None
+            else ReadOnlyKind(
+                read_only=ReadOnlyScope(file_kind=kind, scope=protected),
+            )
+        )
+        result[name] = Entry(object=entry.digest, kind=mode)
     check_aliases(paths=set(result))
     return result
 
@@ -63,12 +74,17 @@ class Nodes:
     projection: GitProjection
     policy: PathPolicy
 
-    def read(self, identity: str) -> Node:
+    def location(self, identity: str) -> Path:
+        """Resolve only a valid owned node identity beneath this directory."""
         if len(identity) != 64 or any(
             character not in "0123456789abcdef" for character in identity
         ):
             raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "invalid node identity")
-        node = Node.model_validate_json((self.directory / identity / "node.json").read_bytes())
+        result = self.directory / identity
+        return result
+
+    def read(self, identity: str) -> Node:
+        node = Node.model_validate_json((self.location(identity) / "node.json").read_bytes())
         if node.id != identity:
             raise CowtreeError(
                 CowtreeErrorCode.COMMAND_FAILED, "node identity does not match its record"
@@ -92,23 +108,24 @@ class Nodes:
             )
         if identity is None:
             identity = hashlib.sha256(uuid.uuid4().bytes).hexdigest()
-        if len(identity) != 64 or any(
-            character not in "0123456789abcdef" for character in identity
-        ):
-            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "invalid node identity")
-        directory = self.directory / identity
+        directory = self.location(identity)
         directory.mkdir()
         tree = directory / "tree"
         try:
             policy = working_policy(source=source, policy=self.policy)
             entries = clone_tree(source=source, target=tree, policy=policy)
+            if parent is None and policy.pins:
+                materialize(self.projection.repository, source, tree, policy)
+                entries = scan_tree(root=tree, policy=policy)
             check_aliases(
                 paths={unicodedata.normalize("NFC", entry.path) for entry in entries}
                 | {unicodedata.normalize("NFC", path) for path in self.policy.derived}
                 | {unicodedata.normalize("NFC", path) for path in self.policy.ephemeral}
             )
-            manifest = source_manifest(root=tree, entries=entries)
+            manifest = source_manifest(root=tree, entries=entries, policy=policy)
             parent_node = None if parent is None else self.read(identity=parent)
+            if parent_node is not None:
+                verify_manifest(manifest, parent_node.source)
             parents = () if projection.parent is None else (projection.parent,)
             if parent_node is not None:
                 parents = (parent_node.git_commit,)
@@ -146,7 +163,9 @@ class Nodes:
     def verify(self, node: Node) -> None:
         """Reject modified source bytes before using an owned immutable image."""
         tree = self.directory / node.id / "tree"
-        actual = source_manifest(root=tree, entries=scan_tree(root=tree, policy=node.policy))
+        actual = source_manifest(
+            root=tree, entries=scan_tree(root=tree, policy=node.policy), policy=node.policy
+        )
         if actual != node.source:
             raise CowtreeError(
                 CowtreeErrorCode.COMMAND_FAILED, f"snapshot source changed: {node.id}"
