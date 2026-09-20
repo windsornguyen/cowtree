@@ -13,6 +13,9 @@
 - Use `uv` for package management, commands, lockfiles, and builds.
 - Do not use `pip`, `poetry`, or `requirements.txt`.
 - Fail closed with typed errors.
+- Do not commit generated benchmark results, run logs, or plots.
+- Keep benchmark methods and reviewed analysis in docs, with runnable scripts in benchmarks.
+- Write raw evidence outside the checkout or in ignored output directories.
 
 ## Contributions
 

@@ -146,6 +146,7 @@ fn protected_objects(connection: &Connection, objects: &ObjectStore) -> Result<B
                 .extend(change.origin.into_iter().chain(change.value).map(|entry| entry.object));
         }
     }
+    crate::import::protect_objects(connection, &mut protected)?;
     protect_candidates(connection, objects, &mut protected)?;
     Ok(protected)
 }

@@ -2,15 +2,46 @@
 
 import os
 from pathlib import Path
+from typing import NoReturn, cast
 
 import pytest
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.native import clone_regular_file
-from cowtree.tree_types import PathClass, PathPolicy
+from cowtree.tree_types import CaptureMode, DerivedHardlinks, PathClass, PathPolicy
 from cowtree.trees import clone_tree, populate_tree, scan_tree
 
 from .conftest import Repository
+
+
+def test_untyped_capture_mode_cannot_disable_verification(tmp_path: Path) -> None:
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    (source / "file").write_bytes(b"preserved source")
+    capture = cast(CaptureMode, "metadata")
+    with pytest.raises(CowtreeError, match="invalid capture mode"):
+        populate_tree(source=source, target=target, policy=PathPolicy(), capture=capture)
+    with pytest.raises(CowtreeError, match="invalid capture mode"):
+        scan_tree(root=source, policy=PathPolicy(), capture=capture)
+    assert list(target.iterdir()) == []
+    assert (source / "file").read_bytes() == b"preserved source"
+
+
+def test_metadata_capture_keeps_source_classification_without_reading_contents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "source.rs").write_bytes(b"source bytes")
+
+    def unexpected_hash() -> NoReturn:
+        raise AssertionError("metadata capture read source contents")
+
+    monkeypatch.setattr("cowtree.trees.hashlib.sha256", unexpected_hash)
+    entries = scan_tree(root=tmp_path, policy=PathPolicy(), capture=CaptureMode.METADATA)
+    assert len(entries) == 1
+    assert entries[0].classification is PathClass.SOURCE
+    assert entries[0].digest is None
+    assert entries[0].identity is not None
 
 
 def test_tree_inherits_cache_without_ephemeral_state(
@@ -57,6 +88,43 @@ def test_tree_rejects_unsupported_entries(tmp_path: Path, kind: str) -> None:
     assert not (tmp_path / "copy").exists()
 
 
+def test_opted_in_cache_hardlinks_become_independent_native_clones(
+    cow_repository: Repository, tmp_path: Path
+) -> None:
+    source = cow_repository.path
+    cache = source / "target"
+    cache.mkdir()
+    original = cache / "artifact"
+    original.write_bytes(b"compiled cache")
+    original.chmod(0o751)
+    os.link(original, cache / "alias")
+    metadata = original.stat()
+    policy = PathPolicy(derived=("target",), derived_hardlinks=DerivedHardlinks.CLONE)
+    target = tmp_path / "clone"
+    clone_tree(source=source, target=target, policy=policy)
+    first, second = target / "target/artifact", target / "target/alias"
+    assert first.read_bytes() == second.read_bytes() == b"compiled cache"
+    assert len({metadata.st_ino, first.stat().st_ino, second.stat().st_ino}) == 3
+    assert first.stat().st_nlink == second.stat().st_nlink == 1
+    assert first.stat().st_mode == metadata.st_mode
+    assert first.stat().st_mtime_ns == metadata.st_mtime_ns
+    first.write_bytes(b"private output")
+    assert second.read_bytes() == original.read_bytes() == b"compiled cache"
+    original.write_bytes(b"changed source cache")
+    assert (cache / "alias").read_bytes() == b"changed source cache"
+    assert second.read_bytes() == b"compiled cache"
+    assert first.read_bytes() == b"private output"
+
+
+def test_cache_opt_in_never_admits_source_hardlinks(tmp_path: Path) -> None:
+    (tmp_path / "source.rs").write_bytes(b"source")
+    (tmp_path / "target").mkdir()
+    os.link(tmp_path / "source.rs", tmp_path / "target/alias")
+    policy = PathPolicy(derived=("target",), derived_hardlinks=DerivedHardlinks.CLONE)
+    with pytest.raises(CowtreeError, match=r"hard-linked file: source\.rs"):
+        scan_tree(root=tmp_path, policy=policy)
+
+
 @pytest.mark.parametrize("prefix", ["", "../cache", "/cache", "cache/", ".git", "a//b"])
 def test_policy_rejects_ambiguous_prefixes(tmp_path: Path, prefix: str) -> None:
     with pytest.raises(CowtreeError) as caught:
@@ -96,7 +164,9 @@ def test_tree_never_publishes_bytes_different_from_capture(
 ) -> None:
     def wrong_capture(source: Path, target: Path) -> None:
         clone_regular_file(source=source, target=target)
-        target.write_bytes(b"intermediate source value")
+        metadata = target.stat()
+        target.write_bytes(b"!" * metadata.st_size)
+        os.utime(target, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
 
     monkeypatch.setattr("cowtree.trees.clone_regular_file", wrong_capture)
     target = tmp_path / "copy"

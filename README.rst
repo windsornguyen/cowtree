@@ -5,16 +5,34 @@ cowtree
 of tracked files. Cloned regular files initially share storage; writing to one
 does not modify the other.
 
+For Apple-silicon Macs, the `local binary bundle <docs/install.rst>`_ includes
+the CLI, Python runtime, and Rust metadata executable. Start with the
+`Cargo quickstart <docs/cargo-workspaces.rst#first-workspace>`_ to inherit a built
+target directory and keep compiling in one private leaf.
+
 Managed workspaces
 ------------------
 
 ``cowtree workspace`` adds warm cache inheritance, retained private checkpoints,
 checked source publication, synchronization, recovery, and collection. The Rust
 SQLite service owns publication; Python owns the real filesystem installation.
+The `declarative schema workflow <docs/schema.rst>`_ generates watermarked SQLite
+DDL with Atlas Community. Prerelease stores accept only the current schema;
+there is no numbered schema history or automatic upgrade path.
 
 Start with the `managed workspace guide <docs/managed-workspaces.rst>`_. It lists
 the complete CLI and Python API, JSON failures, editor coordination rules, and
 a runnable workflow. The original tracked-file commands below remain supported.
+
+`Resumable initial import <docs/initial-import.rst>`_ removes per-file protocol
+round trips. `Cargo qualification <docs/cargo-workspaces.rst>`_ exercises real
+compiled caches and explicit derived hard-link handling. The
+`BSMR boundary <docs/bsmr-workspaces.rst>`_ keeps action-cache authority with BSMR.
+The `performance report <docs/performance.rst>`_ separates import, fresh forks,
+prepared-leaf lookup, and compiler reuse, with scripts to reproduce each result.
+The `production readiness gates <docs/production-readiness.rst>`_ define the
+evidence needed for deployment approval. Current qualification supports opt-in
+developer use; it does not approve mission-critical use or a default BSMR rollout.
 
 `Build-cache measurements <docs/warm-cache.rst>`_ demonstrate actual compiler
 reuse and report total creation cost. `Lifecycle qualification
@@ -182,7 +200,7 @@ prevent an independent add.
 ``inspect_path`` returns a frozen ``DoctorReport`` with ``path: Path``,
 ``filesystem: FilesystemKind``, ``clone_tool: CloneTool | None``, and
 ``reason: str | None``. The enums live in ``cowtree.types``. Filesystem values
-are ``apfs``, ``reflink``, or ``unsupported``. ``supported`` is true only when
+are ``clonefile``, ``reflink``, or ``unsupported``. ``supported`` is true only when
 a native clone probe succeeds and ``clone_tool`` is present. An unsupported
 filesystem returns a report with ``supported=False``; invalid directories and
 operational probe failures raise an error.

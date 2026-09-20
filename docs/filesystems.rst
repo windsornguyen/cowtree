@@ -4,7 +4,10 @@ Filesystem validation
 ``cowtree`` requires a successful native copy-on-write clone on the source and
 target filesystem. An ordinary full copy is never an accepted substitute.
 ``cowtree doctor PATH`` probes this requirement; filesystem names alone do not
-establish support.
+establish support. The probe calls the native cloning operation directly and checks
+both directions of write isolation. macOS does not require ``diskutil`` or the
+DiskManagement service. A successful report names the capability, ``clonefile``
+or ``reflink``, rather than inferring a filesystem name.
 
 Required matrix
 ---------------

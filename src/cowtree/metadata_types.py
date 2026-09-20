@@ -91,6 +91,10 @@ class Tip(Record):
 
 class Operation(str, Enum):
     INIT = "init"
+    BEGIN_IMPORT = "begin_import"
+    IMPORT_CHUNK = "import_chunk"
+    FINISH_IMPORT = "finish_import"
+    STATUS_IMPORT = "status_import"
     CREATE_LEAF = "create_leaf"
     LEAVES = "leaves"
     GRANTS = "grants"
@@ -152,6 +156,9 @@ class MetadataReason(str, Enum):
     IO = "io"
     INVALID_PATH = "invalid_path"
     INVALID_INPUT_FILE = "invalid_input_file"
+    IMPORT_CONFLICT = "import_conflict"
+    IMPORT_NOT_READY = "import_not_ready"
+    IMPORT_SOURCE_CHANGED = "import_source_changed"
     INVALID_ID = "invalid_id"
     SCHEMA = "schema"
     SQLITE_VERSION = "sqlite_version"

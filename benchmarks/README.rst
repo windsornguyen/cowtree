@@ -14,14 +14,20 @@ Run
 ::
 
     $ uv sync --group dev
-    $ uv run python benchmarks/run.py --preset quick --runs 2
-    $ uv run python benchmarks/plot.py benchmarks/results/latest.json
+    $ uv run python benchmarks/run.py --preset quick --runs 2 --out /tmp/cowtree-bench/results.json
+    $ uv run python benchmarks/plot.py /tmp/cowtree-bench/results.json --out-dir /tmp/cowtree-bench/plots
 
 For a heavier run:
 
 ::
 
-    $ uv run python benchmarks/run.py --preset full --runs 3
+    $ uv run python benchmarks/run.py --preset full --runs 3 --out /tmp/cowtree-full/results.json
+
+Keep generated JSON, logs, images, and per-run reports out of source control.
+The default ``results/`` and ``plots/`` directories are ignored. Commit methods
+and reviewed analysis under ``docs/``; retain raw evidence as separate artifacts
+identified by checksums. `Workspace performance <../docs/performance.rst>`_
+separates import, fork, prepared lookup, and compiler reuse.
 
 Profiles
 --------
@@ -67,8 +73,8 @@ as supporting evidence, not the claim.
 Physical APFS allocation
 ------------------------
 
-Recorded Linux v6.12 results: `APFS space report
-<results/apfs-linux-2026-09-15/report.md>`_.
+The `space-efficiency report <../docs/space-efficiency.rst>`_ documents the
+Linux v6.12 workload, measurement method, observed savings, and limitations.
 
 ``space.py`` measures physical allocation in an isolated case-sensitive APFS
 sparse image on macOS. It counts shared extents once, including filesystem

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from itertools import chain
 from pathlib import Path
 import shutil
 import unicodedata
 import uuid
 
-from cowtree.durable import sync_directory, sync_file, write_record
+from cowtree.durable import sync_directory, sync_tree, write_record
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.metadata_types import Entry, EntryKind
 from cowtree.path_policy import check_aliases, working_policy
@@ -122,13 +123,18 @@ class Nodes:
                 git_commit=commit,
                 policy=policy,
             )
-            for entry in entries:
-                if entry.kind is TreeKind.FILE:
-                    sync_file(path=tree / entry.path)
-            for entry in reversed(entries):
-                if entry.kind is TreeKind.DIRECTORY:
-                    sync_directory(path=tree / entry.path)
-            sync_directory(path=tree)
+            sync_tree(
+                root=self.directory,
+                files=(tree / entry.path for entry in entries if entry.kind is TreeKind.FILE),
+                directories=chain(
+                    (
+                        tree / entry.path
+                        for entry in reversed(entries)
+                        if entry.kind is TreeKind.DIRECTORY
+                    ),
+                    (tree, directory),
+                ),
+            )
             write_record(path=directory / "node.json", record=node)
             sync_directory(path=self.directory)
         except BaseException:

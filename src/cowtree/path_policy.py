@@ -64,6 +64,9 @@ def working_policy(source: Path, policy: PathPolicy) -> PathPolicy:
         | set(policy.ephemeral)
     )
     result = PathPolicy(
-        derived=policy.derived, ephemeral=policy.ephemeral, ignored=(*policy.ignored, *prefixes)
+        derived=policy.derived,
+        ephemeral=policy.ephemeral,
+        ignored=(*policy.ignored, *prefixes),
+        derived_hardlinks=policy.derived_hardlinks,
     )
     return result

@@ -9,6 +9,7 @@ from __future__ import annotations
 import ctypes
 import errno
 import fcntl
+from functools import cache
 import os
 from pathlib import Path
 import platform
@@ -18,6 +19,13 @@ from cowtree.errors import CowtreeError, CowtreeErrorCode
 
 
 FICLONE = 0x40049409
+
+
+@cache
+def system_library() -> ctypes.CDLL:
+    """Reuse the system library while ctypes retains errno per thread."""
+    library = ctypes.CDLL(None, use_errno=True)
+    return library
 
 
 def clone_regular_file(source: Path, target: Path) -> None:
@@ -48,7 +56,7 @@ def clone_regular_file(source: Path, target: Path) -> None:
 
 def clonefile(source: Path, target: Path) -> None:
     """Call macOS clonefile(2), retaining errno on failure."""
-    libc = ctypes.CDLL(None, use_errno=True)
+    libc = system_library()
     clone = libc.clonefile
     clone.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint32)
     clone.restype = ctypes.c_int

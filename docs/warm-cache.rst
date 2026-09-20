@@ -40,7 +40,7 @@ Local measurements
 ------------------
 
 Three runs on macOS 26.5.2 arm64 with Apple Clang 21.0.0 and GNU Make 3.81
-produced these median times on the frozen schema-3 implementation working tree,
+produced these median times on the frozen implementation working tree,
 including client-origin pins and initialization recovery:
 
 .. list-table:: Three-trial medians, milliseconds
@@ -69,7 +69,8 @@ producing the expected changed output. Initial workspace creation took a median
 1161.11 ms, separately from the fork timings above.
 
 The copied production binary and 53 Python/Rust/build-input hashes remained
-unchanged throughout these three trials. All three stores used SQLite schema 3.
+unchanged throughout these three trials. All three stores used the database
+layout from that measured revision.
 CLI files were excluded because this benchmark does not import them.
 
 For this tiny fixture, Cowtree's worktree creation cost exceeds the avoided build

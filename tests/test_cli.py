@@ -191,7 +191,7 @@ def test_cli_round_trips_non_utf8_paths_when_supported(tmp_path: Path) -> None:
     try:
         source.mkdir()
     except OSError as error:
-        if error.errno == errno.EILSEQ:
+        if error.errno == errno.EILSEQ or (sys.platform == "darwin" and error.errno == errno.EPERM):
             pytest.skip("filesystem rejects non-UTF8 filenames")
         raise
     create_repository(path=source)

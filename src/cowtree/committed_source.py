@@ -46,7 +46,7 @@ class CommittedSource:
     def open(self) -> Iterator[GitRepository]:
         """Remove only the private seed; retain evidence if Git cleanup fails."""
         parent = self.repository.path.parent
-        report = doctor(path=parent, runner=self.repository.io)
+        report = doctor(path=parent)
         if not report.supported:
             raise CowtreeError(
                 CowtreeErrorCode.COW_UNAVAILABLE, f"CoW unavailable: {report.reason}"

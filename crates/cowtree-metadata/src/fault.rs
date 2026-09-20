@@ -36,3 +36,13 @@ fn pause(point: &str) {
         }
     }
 }
+
+/// Return a deterministic I/O failure only in the explicit fault-injection build.
+pub(crate) fn io_error(point: &str) -> std::io::Result<()> {
+    #[cfg(feature = "fault-injection")]
+    if std::env::var("COWTREE_IO_ERROR_AT").as_deref() == Ok(point) {
+        return Err(std::io::Error::other(format!("injected I/O failure at {point}")));
+    }
+    let _ = point;
+    Ok(())
+}

@@ -11,7 +11,15 @@ import unicodedata
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.native import clone_regular_file
-from cowtree.tree_types import PathClass, PathPolicy, TreeEntry, TreeKind
+from cowtree.tree_types import (
+    CaptureMode,
+    DerivedHardlinks,
+    FileIdentity,
+    PathClass,
+    PathPolicy,
+    TreeEntry,
+    TreeKind,
+)
 
 
 def validate_policy(policy: PathPolicy) -> None:
@@ -60,8 +68,15 @@ def classify(path: str, policy: PathPolicy) -> PathClass:
     return PathClass.SOURCE
 
 
-def capture_entry(root: Path, path: str, classification: PathClass) -> TreeEntry:
-    """Hash source bytes and capture clone metadata for one supported entry."""
+def capture_entry(
+    root: Path,
+    path: str,
+    classification: PathClass,
+    policy: PathPolicy,
+    *,
+    capture: CaptureMode = CaptureMode.CONTENT,
+) -> TreeEntry:
+    """Capture metadata, including source hashes in content mode."""
     source = root / path
     before = source.lstat()
     mode = stat.S_IMODE(before.st_mode)
@@ -74,10 +89,13 @@ def capture_entry(root: Path, path: str, classification: PathClass) -> TreeEntry
         link = os.readlink(source)
         digest = hashlib.sha256(os.fsencode(link)).hexdigest()
     elif stat.S_ISREG(before.st_mode):
-        if before.st_nlink != 1:
+        if before.st_nlink != 1 and not (
+            classification is PathClass.DERIVED
+            and policy.derived_hardlinks is DerivedHardlinks.CLONE
+        ):
             raise CowtreeError(CowtreeErrorCode.UNSUPPORTED_MODE, f"hard-linked file: {path}")
         kind = TreeKind.FILE
-        if classification is PathClass.SOURCE:
+        if classification is PathClass.SOURCE and capture is CaptureMode.CONTENT:
             checksum = hashlib.sha256()
             with source.open("rb") as stream:
                 for block in iter(lambda: stream.read(1024 * 1024), b""):
@@ -90,13 +108,29 @@ def capture_entry(root: Path, path: str, classification: PathClass) -> TreeEntry
     if any(getattr(before, name) != getattr(after, name) for name in identity):
         raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, f"source changed during capture: {path}")
     result = TreeEntry(
-        path, kind, classification, mode, before.st_size, before.st_mtime_ns, digest, link
+        path,
+        kind,
+        classification,
+        mode,
+        before.st_size,
+        before.st_mtime_ns,
+        digest,
+        link,
+        identity=(
+            FileIdentity(before.st_dev, before.st_ino, before.st_ctime_ns)
+            if capture is CaptureMode.METADATA
+            else None
+        ),
     )
     return result
 
 
-def scan_tree(root: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
+def scan_tree(
+    root: Path, policy: PathPolicy, *, capture: CaptureMode = CaptureMode.CONTENT
+) -> tuple[TreeEntry, ...]:
     """Inventory a quiescent tree without traversing symlinks or ephemeral paths."""
+    if capture is not CaptureMode.CONTENT and capture is not CaptureMode.METADATA:
+        raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"invalid capture mode: {capture!r}")
     validate_policy(policy=policy)
     if root.is_symlink() or not root.is_dir():
         raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, f"not a tree directory: {root}")
@@ -117,7 +151,9 @@ def scan_tree(root: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
                 if not selected_child or source.is_symlink() or not source.is_dir():
                     continue
                 classification = PathClass.DERIVED
-            entry = capture_entry(root=root, path=path, classification=classification)
+            entry = capture_entry(
+                root=root, path=path, classification=classification, policy=policy, capture=capture
+            )
             entries.append(entry)
             if entry.kind is TreeKind.DIRECTORY:
                 pending.append(source)
@@ -146,8 +182,10 @@ def clone_tree(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeEntr
     return entries
 
 
-def populate_tree(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeEntry, ...]:
-    """Fill an owned empty directory while preserving its Git control entry."""
+def populate_tree(
+    source: Path, target: Path, policy: PathPolicy, *, capture: CaptureMode = CaptureMode.CONTENT
+) -> tuple[TreeEntry, ...]:
+    """Fill an owned directory; metadata mode requires a final pinned-manifest check."""
     if (
         target.is_symlink()
         or not target.is_dir()
@@ -156,7 +194,7 @@ def populate_tree(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeE
         raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "invalid population target")
     if any(path.name != ".git" for path in target.iterdir()):
         raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "population target contains data")
-    entries = scan_tree(root=source, policy=policy)
+    entries = scan_tree(root=source, policy=policy, capture=capture)
     for entry in entries:
         destination = target / entry.path
         if entry.kind is TreeKind.DIRECTORY:
@@ -167,13 +205,24 @@ def populate_tree(source: Path, target: Path, policy: PathPolicy) -> tuple[TreeE
         else:
             clone_regular_file(source=source / entry.path, target=destination)
             cloned = capture_entry(
-                root=target, path=entry.path, classification=entry.classification
+                root=target,
+                path=entry.path,
+                classification=entry.classification,
+                policy=policy,
+                capture=capture,
             )
             if cloned != entry:
                 raise CowtreeError(
                     CowtreeErrorCode.DIRTY_SOURCE, f"clone differs from capture: {entry.path}"
                 )
-    if scan_tree(root=source, policy=policy) != entries:
+    after = scan_tree(root=source, policy=policy, capture=capture)
+    if after != entries or (
+        capture is CaptureMode.METADATA
+        and any(
+            original.identity != current.identity
+            for original, current in zip(entries, after, strict=True)
+        )
+    ):
         raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, "source changed during tree clone")
     for entry in reversed(entries):
         if entry.kind is TreeKind.DIRECTORY:

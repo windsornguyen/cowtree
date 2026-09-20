@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import ExitStack
 from dataclasses import dataclass
 import fcntl
+from itertools import chain
 import os
 from pathlib import Path
 import shutil
@@ -13,7 +14,7 @@ import uuid
 
 from pydantic import TypeAdapter
 
-from cowtree.durable import sync_directory, sync_file, write_record
+from cowtree.durable import sync_directory, sync_tree, write_record
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
 from cowtree.git import GitRepository
@@ -21,7 +22,7 @@ from cowtree.metadata import Metadata
 from cowtree.metadata_types import Candidate, Digest, Operation, Record
 from cowtree.nodes import source_manifest
 from cowtree.publication import publish_directory
-from cowtree.tree_types import TreeKind
+from cowtree.tree_types import CaptureMode, TreeKind
 from cowtree.trees import populate_tree, scan_tree
 from cowtree.workspace import Workspace
 from cowtree.workspace_types import Leaf, Node
@@ -109,11 +110,11 @@ class Leaves:
                 record = self.prepare(metadata, target, snapshot, directory, lock.fileno())
                 record = record.model_copy(update={"check_candidate": check_candidate})
                 write_record(path=directory / "fork.json", record=record)
-            self.workspace.nodes.verify(node=snapshot)
             populate_tree(
                 source=self.workspace.root / "nodes" / snapshot.id / "tree",
                 target=target,
                 policy=snapshot.policy,
+                capture=CaptureMode.METADATA,
             )
             with self.workspace.session() as metadata:
                 leaf = self.finish(metadata, record, snapshot, lock.fileno())
@@ -180,14 +181,21 @@ class Leaves:
             target.run(args=["-c", "core.fsync=all", "reset", "--mixed", "-q", node.git_commit])
             if target.head() != node.git_commit or target.status():
                 raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, "new leaf checkout is not clean")
-            for entry in entries:
-                if entry.kind is TreeKind.FILE:
-                    sync_file(path=record.path / entry.path)
-            for entry in reversed(entries):
-                if entry.kind is TreeKind.DIRECTORY:
-                    sync_directory(path=record.path / entry.path)
-            sync_file(path=record.path / ".git")
-            sync_directory(path=record.path)
+            sync_tree(
+                root=record.path.parent,
+                files=chain(
+                    (record.path / entry.path for entry in entries if entry.kind is TreeKind.FILE),
+                    (record.path / ".git",),
+                ),
+                directories=chain(
+                    (
+                        record.path / entry.path
+                        for entry in reversed(entries)
+                        if entry.kind is TreeKind.DIRECTORY
+                    ),
+                    (record.path,),
+                ),
+            )
             leaf = Leaf(
                 id=record.leaf,
                 path=record.path,

@@ -3,9 +3,10 @@
 //! Line-delimited JSON interface to the local metadata authority.
 
 use cowtree_metadata::{
-    BatchCandidate, BatchReceipt, Candidate, Entry, ErrorCode, ErrorDetails, Grant, LeafId,
-    LeafView, Limits, Maintenance, Proposal, ProposalInput, Receipt, RequestId, ResolutionInput,
-    ResourcePath, RetryAction, Snapshot, Store, Version, WireError, objects::ObjectId,
+    BatchCandidate, BatchReceipt, Candidate, Entry, ErrorCode, ErrorDetails, Grant, ImportProgress,
+    LeafId, LeafView, Limits, Maintenance, Proposal, ProposalInput, Receipt, RequestId,
+    ResolutionInput, ResourcePath, RetryAction, Snapshot, Store, Version, WireError,
+    objects::ObjectId,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -21,6 +22,17 @@ enum Command {
         #[serde(default)]
         limits: Limits,
     },
+    BeginImport {
+        manifest: Snapshot,
+    },
+    ImportChunk {
+        root: ObjectId,
+        source: PathBuf,
+    },
+    FinishImport {
+        root: ObjectId,
+    },
+    StatusImport,
     CreateLeaf,
     Leaves,
     Grants,
@@ -128,6 +140,8 @@ enum Output {
     Receipt(Receipt),
     Result(Option<Receipt>),
     Maintenance(Maintenance),
+    ImportProgress(ImportProgress),
+    ImportStatus(Option<ImportProgress>),
 }
 #[derive(Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -148,6 +162,12 @@ fn execute(root: &Path, command: Command) -> cowtree_metadata::Result<Output> {
     let mut store = Store::open(root)?;
     let output = match command {
         Command::Init { .. } => return Err(cowtree_metadata::Error::Schema),
+        Command::BeginImport { manifest } => Output::ImportProgress(store.begin_import(manifest)?),
+        Command::ImportChunk { root, source } => {
+            Output::ImportProgress(store.import_chunk(&root, &source)?)
+        }
+        Command::FinishImport { root } => Output::ImportProgress(store.finish_import(&root)?),
+        Command::StatusImport => Output::ImportStatus(store.status_import()?),
         Command::CreateLeaf => Output::Leaf(store.create_leaf()?),
         Command::Leaves => Output::Leaves(store.leaves()?),
         Command::Grants => Output::Grants(store.grants()?),

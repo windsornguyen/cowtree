@@ -13,7 +13,7 @@ import pytest
 from cowtree import fs, native
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
-from cowtree.types import CommandResult
+from cowtree.types import CloneTool, CommandResult, FilesystemKind
 
 
 @pytest.mark.parametrize("payload", [b"a\r\nb\rc\n", b"raw\xff\x80\x00bytes\r\n"])
@@ -49,9 +49,40 @@ def test_doctor_requires_existing_directory(tmp_path: Path, make_file: bool) -> 
     assert caught.value.code == CowtreeErrorCode.INVALID_ARGUMENTS
 
 
+@pytest.mark.parametrize("system", ["Darwin", "Linux"])
+def test_doctor_uses_native_probe_without_disk_management(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str
+) -> None:
+    def unavailable_command(
+        self: CommandRunner,
+        argv: list[str],
+        *,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+        check: bool = True,
+    ) -> CommandResult:
+        del self, argv, cwd, env, check
+        raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "DiskManagement framework unavailable")
+
+    def clone(source: Path, target: Path) -> None:
+        target.write_bytes(source.read_bytes())
+
+    monkeypatch.setattr(platform, "system", lambda: system)
+    monkeypatch.setattr(CommandRunner, "run", unavailable_command)
+    monkeypatch.setattr(native, "clonefile" if system == "Darwin" else "reflink", clone)
+    report = fs.doctor(path=tmp_path)
+    assert report.supported
+    assert report.filesystem == (
+        FilesystemKind.CLONEFILE if system == "Darwin" else FilesystemKind.REFLINK
+    )
+    assert report.clone_tool == (
+        CloneTool.MACOS_CLONEFILE if system == "Darwin" else CloneTool.LINUX_FICLONE
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_doctor_probes_apfs_clone_support(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(fs, "darwin_filesystem_type", lambda **_kwargs: "apfs")
 
     def unavailable(source: Path, target: Path) -> None:  # noqa: ARG001
         raise CowtreeError(CowtreeErrorCode.COW_UNAVAILABLE, "clone disabled")
@@ -67,7 +98,6 @@ def test_doctor_preserves_operational_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(fs, "darwin_filesystem_type", lambda **_kwargs: "apfs")
 
     def inaccessible(source: Path, target: Path) -> None:  # noqa: ARG001
         raise CowtreeError(CowtreeErrorCode.COMMAND_FAILED, "permission denied")
@@ -77,38 +107,6 @@ def test_doctor_preserves_operational_errors(
         fs.doctor(path=tmp_path)
     assert caught.value.code == CowtreeErrorCode.COMMAND_FAILED
     assert list(tmp_path.iterdir()) == []
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        "not a plist",
-        "<plist><array/></plist>",
-        "<plist><dict/></plist>",
-        "<plist><dict><key>FilesystemType</key><integer>7</integer></dict></plist>",
-        "<plist><dict><key>FilesystemType</key><string></string></dict></plist>",
-    ],
-)
-def test_filesystem_probe_rejects_invalid_metadata(tmp_path: Path, payload: str) -> None:
-    class MetadataRunner(CommandRunner):
-        def run(
-            self,
-            argv: list[str],
-            *,
-            cwd: str | None = None,
-            env: Mapping[str, str] | None = None,
-            check: bool = True,
-        ) -> CommandResult:
-            assert cwd is None
-            assert env is None
-            assert check
-            stdout = "device blocks mounted\n/dev/disk0 1 /\n" if argv[0] == "df" else payload
-            result = CommandResult(argv=argv, returncode=0, stdout=stdout)
-            return result
-
-    with pytest.raises(CowtreeError) as caught:
-        fs.darwin_filesystem_type(path=tmp_path, runner=MetadataRunner())
-    assert caught.value.code == CowtreeErrorCode.COMMAND_FAILED
 
 
 @pytest.mark.parametrize("kind", ["directory", "symlink"])
@@ -170,7 +168,7 @@ def test_native_clone_mutation_isolation(
     try:
         source.write_bytes(payload)
     except OSError as error:
-        if error.errno == errno.EILSEQ:
+        if error.errno == errno.EILSEQ or (sys.platform == "darwin" and error.errno == errno.EPERM):
             pytest.skip("filesystem requires UTF-8 filenames")
         raise
     source.chmod(0o751)

@@ -1,4 +1,5 @@
 import { action, type ScriptExec } from "@dedalus-labs/hollywood/action-runtime";
+import { dirname, isAbsolute } from "node:path";
 
 export async function checkFilesystems(exec: ScriptExec, path: string | undefined): Promise<void> {
   if (!path) throw new Error("PATH is required for the native filesystem checks");
@@ -6,7 +7,10 @@ export async function checkFilesystems(exec: ScriptExec, path: string | undefine
   await exec("sudo", ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"]);
   await exec("rustup", ["toolchain", "install", "1.97.1", "--profile", "minimal"]);
   await exec("cargo", ["+1.97.1", "build", "--locked", "-p", "cowtree-metadata"]);
-  await exec("sudo", ["env", `PATH=${path}`, "bash", "scripts/fs_matrix.sh"]);
+  const selected = await exec("rustup", ["which", "--toolchain", "1.97.1", "cargo"]);
+  const cargo = selected.stdout.trim();
+  if (!isAbsolute(cargo)) throw new Error("rustup did not return an absolute Cargo executable");
+  await exec("sudo", ["env", `PATH=${dirname(cargo)}:${path}`, "bash", "scripts/fs_matrix.sh"]);
 }
 
 export const nativeFilesystems = action({

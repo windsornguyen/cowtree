@@ -93,7 +93,8 @@ def remove_worktree(
 
 def inspect_path(path: Path, runner: CommandRunner | None = None) -> DoctorReport:
     """Probe native CoW support in an existing directory without requiring Git."""
-    report = doctor(path=path, runner=runner)
+    del runner  # Native probing has no subprocess dependency.
+    report = doctor(path=path)
     return report
 
 
@@ -200,7 +201,7 @@ class WorktreeCreation:
             raise CowtreeError(
                 CowtreeErrorCode.DIFFERENT_FILESYSTEM, "source and target filesystems differ"
             )
-        report = doctor(path=parent, runner=self.repository.io)
+        report = doctor(path=parent)
         if not report.supported:
             raise CowtreeError(
                 CowtreeErrorCode.COW_UNAVAILABLE, f"CoW unavailable: {report.reason}"

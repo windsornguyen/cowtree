@@ -43,6 +43,11 @@ files to exclude. Repeat either option for several prefixes. Unselected ignored
 files, Git control state, and Cowtree control state are excluded. Cowtree does not
 infer secrets from file contents: declare private runtime paths explicitly.
 
+For Cargo targets with hard links, ``--derived-hardlinks clone`` explicitly
+clones each derived pathname to a separate inode. The default ``reject`` policy
+refuses those inputs. Source hard links remain unsupported. See
+`Cargo workspace qualification <cargo-workspaces.rst>`_.
+
 Tracked source cannot be reclassified as derived or ephemeral. Overlapping policy
 prefixes fail. Forks inherit eligible cache bytes, modes, and modification times
 through private CoW copies; cache writes remain isolated. Source publication
@@ -142,6 +147,8 @@ Every managed CLI command begins ``cowtree workspace --root STORE``.
      - Python owner and operation
    * - ``init``
      - ``cowtree.workspace.Workspace.create``; ``Workspace.open`` reopens a store.
+   * - ``import-status``
+     - ``Workspace.import_status`` returns the durable initial-import cursor.
    * - ``list``, ``fork``
      - ``cowtree.leaves.Leaves.records``, ``Leaves.fork``.
    * - ``acquire``, ``sync``, ``discard``
@@ -174,6 +181,11 @@ API remains for independent tracked-file worktrees.
 if one exists, or its last installed origin. It preserves the pending request
 and unrelated edits. It does not fetch the newest shared tip.
 
+Large initial imports run in bounded, resumable chunks. Use ``import-status``
+to observe durable progress and ``recover`` to resume the same captured snapshot.
+See `Initial import <initial-import.rst>`_ and the
+`BSMR materialization boundary <bsmr-workspaces.rst>`_.
+
 Failures and recovery
 ---------------------
 
@@ -196,9 +208,9 @@ An interrupted initialization before claiming its staging name can leave a priva
 temporary sibling; it cannot block retry and is not broadly deleted by recovery.
 
 A failure may arrive after durable work completed. Query ``result`` or reopen
-and recover before deciding to submit a new request. Schema-1/2 authority stores
-migrate transactionally to schema 3. Unsupported schema versions fail. The
-filesystem record schema remains 1 with additive collection directories.
+and recover before deciding to submit a new request. The authority schema and
+workspace layout must match the current release. Incompatible stores fail without
+schema or data migration. See `Declarative schema <schema.rst>`_.
 
 Use the managed API exclusively for its store. Calling raw authority mutations
 or editing client records bypasses its filesystem lock and is outside this contract.

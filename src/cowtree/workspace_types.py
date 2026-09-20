@@ -69,7 +69,6 @@ class Leaf(Record):
 
 
 class WorkspaceConfig(Record):
-    schema_version: int = 1
     location: Path
     source: Path
     git_directory: Path

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+import errno
 import fcntl
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 
@@ -24,6 +27,42 @@ def sync_directory(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def sync_tree(root: Path, files: Iterable[Path], directories: Iterable[Path]) -> None:
+    """Flush a quiescent tree on one filesystem before acknowledging its record.
+
+    Write every file and directory to the device before requesting one macOS
+    device-cache flush. Directories must include every changed parent below root,
+    ordered from children to parents; root is flushed last. Any failed writeout
+    aborts the group without acknowledgement. Linux fsync retains its normal
+    device-cache semantics for each file and directory.
+    """
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        device = os.fstat(descriptor).st_dev
+        for paths, directory in ((files, False), (directories, True)):
+            for path in paths:
+                flags = os.O_RDONLY | os.O_NOFOLLOW
+                if directory:
+                    flags |= os.O_DIRECTORY
+                entry = os.open(path, flags)
+                try:
+                    metadata = os.fstat(entry)
+                    if metadata.st_dev != device:
+                        raise OSError(errno.EXDEV, "flush group crosses filesystems", str(path))
+                    if not directory and not stat.S_ISREG(metadata.st_mode):
+                        raise OSError(
+                            errno.EINVAL, "flush group requires a regular file", str(path)
+                        )
+                    os.fsync(entry)
+                finally:
+                    os.close(entry)
+        os.fsync(descriptor)
+        if sys.platform == "darwin":
+            fcntl.fcntl(descriptor, 51)  # Darwin F_FULLFSYNC covers the completed writeouts.
     finally:
         os.close(descriptor)
 

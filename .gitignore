@@ -11,3 +11,5 @@ target/
 node_modules/
 !.github/actions/ci/*/dist/
 .tools/
+benchmarks/results/
+benchmarks/plots/

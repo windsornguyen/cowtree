@@ -18,15 +18,11 @@ from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
 from cowtree.fs import doctor
 from cowtree.git import GitRepository
+from cowtree.initial_import import ImportProgress, InitialImport
 from cowtree.metadata import Metadata
 from cowtree.metadata_types import (
-    Candidate,
-    EntryKind,
-    Grant,
     Operation,
-    Receipt,
     Record,
-    Request,
     Tip,
 )
 from cowtree.nodes import Nodes
@@ -34,6 +30,9 @@ from cowtree.projection import GitProjection, ProjectionSpec
 from cowtree.publication import publish_directory
 from cowtree.tree_types import PathPolicy
 from cowtree.workspace_types import Node, WorkspaceConfig
+
+
+DIRECTORIES = ("nodes", "leaves", "operations", "checks", "retained", "trash", "receipts")
 
 
 class Initialization(Record):
@@ -71,10 +70,8 @@ class Workspace:
             raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "workspace root is a symlink")
         root = root.resolve()
         config = WorkspaceConfig.model_validate_json((root / "workspace.json").read_bytes())
-        if config.schema_version != 1 or config.location != root:
-            raise CowtreeError(
-                CowtreeErrorCode.INVALID_ARGUMENTS, "workspace identity or schema mismatch"
-            )
+        if config.location != root:
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "workspace identity mismatch")
         result = cls(root=root, config=config)
         return result
 
@@ -90,12 +87,13 @@ class Workspace:
                     raise CowtreeError(
                         CowtreeErrorCode.INVALID_ARGUMENTS, "workspace directory changed"
                     )
-                # Additive schema-1 layout upgrade for stores created before collection.
-                for name in ("trash", "receipts"):
+                for name in DIRECTORIES:
                     directory = self.root / name
-                    if not directory.exists():
-                        directory.mkdir(mode=0o700)
-                        sync_directory(path=self.root)
+                    if directory.is_symlink() or not directory.is_dir():
+                        raise CowtreeError(
+                            CowtreeErrorCode.INVALID_ARGUMENTS,
+                            f"workspace layout mismatch: {name}",
+                        )
                 with Metadata(
                     root=self.root / "authority",
                     binary=self.config.binary,
@@ -206,7 +204,7 @@ class Workspace:
     def initialize(
         cls, staging: Path, root: Path, repository: GitRepository, binary: Path, policy: PathPolicy
     ) -> None:
-        for name in ("nodes", "leaves", "operations", "checks", "retained", "trash", "receipts"):
+        for name in DIRECTORIES:
             (staging / name).mkdir()
         with repository.lock() as descriptor:
             locked = GitRepository(
@@ -224,14 +222,6 @@ class Workspace:
                 raise CowtreeError(
                     CowtreeErrorCode.HEAD_MISMATCH, "source HEAD changed during initialization"
                 )
-        with Metadata(
-            root=staging / "authority", binary=binary, descriptors=repository.io.descriptors
-        ) as metadata:
-            metadata.call(Operation.INIT)
-            cls.import_node(metadata=metadata, nodes=nodes, node=node)
-        GitProjection(repository).set_ref(
-            reference=f"refs/cowtree/tips/{node.id}", commit=node.git_commit
-        )
         common = repository.capture(
             args=["rev-parse", "--path-format=absolute", "--git-common-dir"]
         ).removesuffix("\n")
@@ -244,47 +234,29 @@ class Workspace:
             initial=node.id,
             warm_tip=node.id,
         )
-        write_record(path=staging / "workspace.json", record=config)
-        sync_directory(path=staging)
+        with Metadata(
+            root=staging / "authority", binary=binary, descriptors=repository.io.descriptors
+        ) as metadata:
+            metadata.call(Operation.INIT)
+        write_record(path=staging / "import.json", record=config)
+        importer = InitialImport(staging=staging, config=config)
+        importer.run(descriptors=repository.io.descriptors)
 
-    @staticmethod
-    def import_node(metadata: Metadata, nodes: Nodes, node: Node) -> None:
-        if not node.source:
-            return
-        leaf = metadata.call(Operation.CREATE_LEAF).decode("leaf", TypeAdapter(int))
-        grants = metadata.call(
-            Operation.ACQUIRE, {"leaf": leaf, "paths": list(node.source)}
-        ).decode("grants", TypeAdapter(list[Grant]))
-        for grant in grants:
-            active = metadata.call(
-                Operation.ACTIVATE, {"grant": grant.model_dump(mode="json")}
-            ).decode("grant", TypeAdapter(Grant))
-            entry = node.source[grant.path]
-            source = nodes.directory / node.id / "tree" / grant.path
-            if entry.kind is EntryKind.SYMLINK:
-                output = metadata.call(
-                    Operation.STAGE, {"leaf": leaf, "data": list(os.fsencode(os.readlink(source)))}
-                )
-            else:
-                output = metadata.call(Operation.STAGE_FILE, {"leaf": leaf, "path": str(source)})
-            if output.decode("object", TypeAdapter(str)) != entry.object:
-                raise CowtreeError(CowtreeErrorCode.DIRTY_SOURCE, "captured source object changed")
-            metadata.call(
-                Operation.EDIT,
-                {"grant": active.model_dump(mode="json"), "value": entry.model_dump(mode="json")},
-            )
-        request = Request(leaf=leaf, sequence=1)
-        metadata.call(
-            Operation.PROPOSE,
-            {"input": {"request": request.model_dump(mode="json"), "paths": list(node.source)}},
-        )
-        candidate = metadata.call(
-            Operation.PREPARE, {"request": request.model_dump(mode="json")}
-        ).decode("candidate", TypeAdapter(Candidate))
-        metadata.call(Operation.COMMIT, {"candidate": candidate.model_dump(mode="json")}).decode(
-            "receipt", TypeAdapter(Receipt)
-        )
-        metadata.call(Operation.DROP_LEAF, {"leaf": leaf})
+    @classmethod
+    def import_status(cls, root: Path) -> ImportProgress | None:
+        """Observe acknowledged import progress on a published or initializing store."""
+        root = root.resolve()
+        if root.exists():
+            workspace = cls.open(root=root)
+            importer = InitialImport(staging=root, config=workspace.config)
+        else:
+            staging = cls.staging(root=root)
+            config = WorkspaceConfig.model_validate_json((staging / "import.json").read_bytes())
+            if config.location != root:
+                raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "import target mismatch")
+            importer = InitialImport(staging=staging, config=config)
+        result = importer.status()
+        return result
 
     @classmethod
     def recover_initialization(cls, root: Path) -> bool:
@@ -328,6 +300,12 @@ class Workspace:
                 raise CowtreeError(
                     CowtreeErrorCode.INVALID_ARGUMENTS, "initialization target mismatch"
                 )
+            if (staging / "import.json").exists():
+                config = WorkspaceConfig.model_validate_json((staging / "import.json").read_bytes())
+                if config.location != root:
+                    raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "import target mismatch")
+                importer = InitialImport(staging=staging, config=config)
+                importer.run(descriptors=(lock.fileno(),))
             if (staging / "workspace.json").exists():
                 with Metadata(
                     root=staging / "authority", binary=record.binary, descriptors=(lock.fileno(),)

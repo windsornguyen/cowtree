@@ -43,6 +43,9 @@ the encoded request limit can be reached before the library's 64 MiB blob limit.
 | Rust operation / JSON `op` | Contract |
 |---|---|
 | `create` / `init`, `open` | Create a new authority or validate schema and required durability settings. Capture absolute paths so later `chdir` cannot redirect objects. |
+| `begin_import` | Bind a pristine authority to one initial manifest; return durable progress. |
+| `import_chunk`, `status_import` | Import a bounded chunk from the frozen tree, or inspect its committed cursor. |
+| `finish_import` | Verify all imported bytes and atomically publish epoch one; never expose a partial initial snapshot. |
 | `create_leaf` | Allocate a leaf identity that is never reused. |
 | `leaves`, `grants` | Inspect active leaf identities and current reservations for recovery and filesystem namespace checks. Each response is a consistent metadata read. |
 | `tip`, `snapshot`, `read` | Return the current version/root, a retained manifest, or verified bytes at a retained version. Absence is explicit. |
@@ -86,11 +89,11 @@ member cannot commit through the single-candidate interface. Low-level preparati
 and commit do not run checks; managed clients validate the exact union candidate
 before calling commit.
 
-Schema version 2 introduced nullable `proposals.batch_id`; version 3 adds client
-object pins. Opening a version 1 or 2 store migrates it in one serialized
-transaction, preserving pending attempts, receipts, and counters. Unsupported
-versions fail. Physical installation records remain
-owned by the Python workspace; this schema has no filesystem bindings.
+Prerelease stores must match the current declaration bundled with the executable.
+Opening an incompatible schema fails without schema or data migration. The
+[declarative workflow](../../docs/schema.rst) generates SQL and reviewable diffs;
+it does not upgrade live stores. Physical installation records remain owned by
+the Python workspace; this schema has no filesystem bindings.
 
 Failures use `database_busy` with `retry_same_request` only for SQLite BUSY/LOCKED.
 A tip change requires `reprepare`; a stale origin requires `resolve_conflict`.
@@ -144,8 +147,7 @@ and prepared parents. It also protects lease origins, dirty views, upload hashes
 pending captured entries, candidate manifests, and durable client origin pins.
 `replace_client_pins` is owned by one serialized filesystem adapter. It must retain
 old roots until replacement client records are durable; construction pins protect
-new objects during the transition. Schema 3 adds these pins and upgrades schemas
-1 and 2 atomically. Receipts prove publication but
+new objects during the transition. Receipts prove publication but
 do not keep bytes alive; pin a version when its bytes must survive later pruning.
 A per-leaf sequence high-water mark prevents an expired request from executing
 again; dropping a leaf does not allow reuse of its identity.

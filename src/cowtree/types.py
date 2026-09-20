@@ -55,9 +55,9 @@ class Arguments(argparse.Namespace):
 
 
 class FilesystemKind(str, Enum):
-    """Filesystem families supported by a successful clone probe."""
+    """Native clone capabilities reported by a successful probe."""
 
-    APFS = "apfs"
+    CLONEFILE = "clonefile"
     REFLINK = "reflink"
     UNSUPPORTED = "unsupported"
 
@@ -248,7 +248,7 @@ def requires_only_the_destination_path() -> None:
 @test
 def reports_support_from_clone_tool() -> None:
     report = DoctorReport(
-        path=Path("."), filesystem=FilesystemKind.APFS, clone_tool=CloneTool.MACOS_CLONEFILE
+        path=Path("."), filesystem=FilesystemKind.CLONEFILE, clone_tool=CloneTool.MACOS_CLONEFILE
     )
     assert report.supported is True
 

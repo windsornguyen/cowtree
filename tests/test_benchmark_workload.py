@@ -6,6 +6,7 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import stat
 
 import pytest
 
@@ -23,8 +24,16 @@ from cowtree.core import inspect_path
 from .conftest import Repository
 
 
-@pytest.fixture
-def source(repository: Repository) -> Repository:
+def checkout_fixture(repository: Repository) -> None:
+    """Recreate owned fixture files using Git's modes and the current umask."""
+    tracked = repository.git("ls-files", "-z").stdout.split("\0")
+    for name in tracked:
+        if name:
+            (repository.path / name).unlink()
+    repository.git("checkout-index", "--all")
+
+
+def create_source(repository: Repository) -> Repository:
     for index in range(12):
         (repository.path / f"source-{index}.c").write_text(f"int value_{index} = {index};\n")
     (repository.path / "line\nname.h").write_bytes(b"/* unusual filename */\n")
@@ -35,7 +44,14 @@ def source(repository: Repository) -> Repository:
     executable.chmod(0o755)
     (repository.path / ".gitignore").write_text("ignored\n")
     repository.commit()
+    checkout_fixture(repository=repository)
     return repository
+
+
+@pytest.fixture
+def source(repository: Repository) -> Repository:
+    result = create_source(repository=repository)
+    return result
 
 
 def new_fleet(source: Repository, root: Path, method: Method) -> Fleet:
@@ -117,7 +133,9 @@ def test_invariant_identical_seed_produces_identical_cross_method_state(
     assert histories[0] == histories[1]
 
 
-@pytest.mark.parametrize("corruption", ["bytes", "mode", "symlink", "ignored", "head"])
+@pytest.mark.parametrize(
+    "corruption", ["bytes", "mode", "permissions", "symlink", "ignored", "head"]
+)
 def test_invariant_oracle_rejects_unmodeled_state_changes(
     source: Repository,
     tmp_path: Path,
@@ -130,6 +148,9 @@ def test_invariant_oracle_rejects_unmodeled_state_changes(
         (leaf.path / "source-0.c").write_bytes(b"unmodeled bytes\n")
     elif corruption == "mode":
         (leaf.path / "run").chmod(0o644)
+    elif corruption == "permissions":
+        executable = leaf.path / "run"
+        executable.chmod(stat.S_IMODE(executable.stat().st_mode) ^ stat.S_IWGRP)
     elif corruption == "symlink":
         (leaf.path / "link").unlink()
         (leaf.path / "link").symlink_to("source-1.c")
@@ -176,6 +197,7 @@ def test_invariant_atomic_save_preserves_mode_with_changed_umask(
     path = source.path / "source-0.c"
     path.chmod(0o755)
     source.commit()
+    checkout_fixture(repository=source)
     fleet = new_fleet(source=source, root=tmp_path / "fleet", method=Method.GIT)
     fleet.populate(count=1)
     previous = os.umask(0o077)
@@ -194,6 +216,26 @@ def test_invariant_atomic_save_preserves_mode_with_changed_umask(
     assert fleet.verify().changed_files == len(fleet.eligible)
     assert asdict(atomic)["selection_sha256"] == appended.selection_sha256
     fleet.cleanup()
+
+
+@pytest.mark.parametrize("mask", [0o002, 0o022])
+@pytest.mark.parametrize("method", list(Method))
+def test_invariant_fixture_modes_match_checkout_creation_policy(
+    repository: Repository, tmp_path: Path, mask: int, method: Method
+) -> None:
+    if method is Method.COWTREE and not inspect_path(path=repository.path).supported:
+        pytest.skip("native copy-on-write filesystem required")
+    previous = os.umask(mask)
+    try:
+        source = create_source(repository=repository)
+        fleet = new_fleet(source=source, root=tmp_path / "fleet", method=method)
+        assert fleet.inventory["run"].mode == 0o777 & ~mask
+        assert fleet.inventory["source-0.c"].mode == 0o666 & ~mask
+        fleet.populate(count=1)
+        assert fleet.verify().changed_files == 0
+        fleet.cleanup()
+    finally:
+        os.umask(previous)
 
 
 def test_invariant_space_ratio_retains_overhead_and_negative_savings() -> None:

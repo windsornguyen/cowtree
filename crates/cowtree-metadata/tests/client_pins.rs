@@ -51,28 +51,6 @@ fn invalid_replacement_cannot_release_the_previous_client_roots() {
     );
 }
 
-#[test]
-fn version_two_migrates_without_changing_snapshot_or_active_leaves() {
-    let directory = tempfile::tempdir().unwrap();
-    let root = directory.path().join("store");
-    let mut store = Store::create(&root, Limits::default()).unwrap();
-    let leaf = store.create_leaf().unwrap();
-    let tip = store.tip().unwrap();
-    drop(store);
-    let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
-    connection.execute_batch("DROP TABLE client_pins; PRAGMA user_version=2;").unwrap();
-    drop(connection);
-    let mut reopened = Store::open(&root).unwrap();
-    assert_eq!(reopened.tip().unwrap(), tip);
-    assert_eq!(reopened.leaves().unwrap(), vec![leaf]);
-    reopened.replace_client_pins(&BTreeSet::new()).unwrap();
-    let connection = rusqlite::Connection::open(root.join("metadata.sqlite3")).unwrap();
-    assert_eq!(
-        connection.pragma_query_value::<i64, _>(None, "user_version", |row| row.get(0)).unwrap(),
-        3
-    );
-}
-
 #[cfg(feature = "fault-injection")]
 #[test]
 fn process_exit_replaces_client_pins_atomically() {

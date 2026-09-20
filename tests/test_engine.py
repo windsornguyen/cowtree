@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import os
 from pathlib import Path
+import sys
 from typing import NoReturn
 
 import pytest
@@ -76,7 +77,7 @@ def test_invariant_non_utf8_names_round_trip(cow_repository: Repository, tmp_pat
     try:
         (repo.path / filename).write_bytes(b"raw bytes\n")
     except OSError as error:
-        if error.errno == errno.EILSEQ:
+        if error.errno == errno.EILSEQ or (sys.platform == "darwin" and error.errno == errno.EPERM):
             pytest.skip("filesystem rejects non-UTF-8 filenames")
         raise
     repo.commit()
