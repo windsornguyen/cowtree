@@ -59,6 +59,8 @@ test("every local action artifact belongs to a declared generated action", async
 });
 
 test("the Python and SQLite matrices and production test-hook checks stay intact", () => {
+  assert.equal(ci.jobs.windows["runs-on"], "windows-2025");
+  assert.equal(ci.jobs.windows["timeout-minutes"], 15);
   assert.deepEqual(ci.jobs.test.strategy.matrix.values, {
     os: ["ubuntu-latest", "macos-latest"],
     "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],

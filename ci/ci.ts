@@ -130,6 +130,20 @@ export const ci = workflow(
         "timeout-minutes": 15,
         steps: [checkout, setupUv, uses(nativeFilesystems, { with: {} })],
       }),
+      windows: job({
+        name: "Windows ReFS native cloning",
+        "runs-on": "windows-2025",
+        "timeout-minutes": 15,
+        steps: [
+          checkout,
+          setupUv,
+          run("Install Python", "uv", ["python", "install", "3.10"]),
+          run("Install test dependencies", "uv", ["sync", "--locked", "--group", "test"]),
+          run("Check ReFS isolation and NTFS refusal", "pwsh", [
+            "-NoProfile", "-File", "scripts/test_windows.ps1",
+          ]),
+        ],
+      }),
       specification: job({
         name: "Workspace protocol model",
         "runs-on": "ubuntu-24.04",
