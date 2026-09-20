@@ -63,6 +63,7 @@ test("the Python and SQLite matrices and production test-hook checks stay intact
     os: ["ubuntu-latest", "macos-latest"],
     "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],
   });
+  assert.deepEqual(ci.jobs.test.env, { UV_PYTHON: ci.jobs.test.strategy.matrix.refs["python-version"] });
   assert.deepEqual(metadata.jobs.metadata.strategy.matrix.values.os, [
     "ubuntu-24.04",
     "macos-latest",
