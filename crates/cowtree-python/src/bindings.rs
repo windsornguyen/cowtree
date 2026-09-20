@@ -6,6 +6,7 @@ use crate::request::Request;
 use pyo3::{create_exception, exceptions::PyRuntimeError, prelude::*};
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
 create_exception!(_libcowtree, EngineError, PyRuntimeError);
 
@@ -20,9 +21,32 @@ pub(crate) fn json<T: Serialize>(value: T) -> PyResult<String> {
 
 #[pyfunction]
 fn add_worktree(py: Python<'_>, request: Request) -> PyResult<String> {
-    let request = request.native().map_err(engine_error)?;
-    let tree = py.detach(move || cowtree::add_worktree(&request)).map_err(engine_error)?;
-    json(tree)
+    let mut request = request.native().map_err(engine_error)?;
+    let interrupted = Arc::new(OnceLock::new());
+    let pending = Arc::clone(&interrupted);
+    request.cancellation =
+        cowtree::Cancellation::with_check(move || match Python::attach(|py| py.check_signals()) {
+            Ok(()) => false,
+            Err(error) => {
+                pending.get_or_init(|| error);
+                true
+            }
+        });
+    let result = py.detach(move || cowtree::add_worktree(&request));
+    match result {
+        Ok(tree) => json(tree),
+        Err(error) => {
+            let signal = interrupted.get().map(|error| error.clone_ref(py));
+            if matches!(error, cowtree::WorktreeError::Native(cowtree::Error::Cancelled)) {
+                if let Some(signal) = signal {
+                    return Err(signal);
+                }
+            }
+            let failure = engine_error(error);
+            failure.set_cause(py, signal);
+            Err(failure)
+        }
+    }
 }
 
 #[pyfunction]
