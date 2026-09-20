@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "cowtree"
 version = "0.0.1"
 description = "Copy-on-write git worktrees for AI agent fleets"
-readme = "README.rst"
+readme = { file = "README", content-type = "text/x-rst" }
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Windsor Nguyen" }]
