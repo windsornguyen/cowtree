@@ -1,9 +1,11 @@
 Native filesystem portability
 =============================
 
-`Issue 12`_ requires a complete Windows workspace backend: native cloning,
-coordination, publication, recovery, and cleanup. The current implementation has
-macOS and Linux managed backends. Windows managed workspaces remain unimplemented.
+`Issue 12`_ covers Windows native cloning and standalone Git worktrees.
+`Issue 26`_ tracks the separate managed backend: coordination, publication,
+recovery, and cleanup. The current implementation has macOS and Linux managed
+backends. Windows managed workspaces remain unimplemented and fail before
+creating state.
 ``filesystems.rst`` defines the current capability probe and filesystem matrix.
 
 Native ReFS probe
@@ -19,35 +21,40 @@ Run it against an existing test ReFS volume, supplying an absent directory::
 
     powershell -NoProfile -File benchmarks/refs_probe.ps1 -Directory D:\cowtree-probe
 
-This qualifies the aligned native primitive. Partial-cluster files, metadata,
-locks, publication and managed recovery still need the implementation below.
+That initial probe qualified the aligned native primitive. The ongoing CI suite
+in ``windows/`` additionally checks partial-cluster files, standalone Git locks,
+symlink kinds, executable index modes, and cleanup. See ``windows-native.rst``.
+Managed publication and recovery still need the implementation below.
 An NTFS system disk was left untouched; it was not reformatted for this test.
 
 .. _Issue 12: https://github.com/windsornguyen/cowtree/issues/12
+.. _Issue 26: https://github.com/windsornguyen/cowtree/issues/26
 
-Implementation sequence
------------------------
+Managed implementation sequence
+-------------------------------
 
-1. **Make platform selection importable.** ``src/cowtree/native.py``,
-   ``durable.py``, ``git.py``, ``workspace.py``, ``leaves.py``, ``lifecycle.py``,
-   and ``checks.py`` import the Unix-only `fcntl module`_ unconditionally.
+1. **Make managed platform selection importable.** ``src/cowtree/durable.py``,
+   ``workspace.py``, ``leaves.py``, ``lifecycle.py``, and ``checks.py`` import
+   the Unix-only `fcntl module`_ unconditionally. Standalone native cloning
+   and Git locking already select platform-specific implementations.
    Put those operations behind an explicit platform boundary so unsupported
    systems can return the documented ``cow_unavailable`` result. Test package
    imports and JSON CLI failure before any workspace, branch, or registration
    is created. Keep one selected implementation per platform; ordinary copying
    remains unsupported.
 
-2. **Implement and probe native block cloning.** Add the Windows implementation
-   behind ``native.py`` and report it through ``fs.py`` and ``types.py``. Query
-   the opened source and destination volumes and require
-   `FILE_SUPPORTS_BLOCK_REFCOUNTING`_ before calling
-   `FSCTL_DUPLICATE_EXTENTS_TO_FILE`_. Verify distinct file identities, exact
+2. **Retain the native cloning contract.** ``windows.py`` implements block
+   cloning behind ``native.py`` and reports it through ``fs.py`` and ``types.py``.
+   It requires matching volumes and `FILE_SUPPORTS_BLOCK_REFCOUNTING`_ before
+   calling `FSCTL_DUPLICATE_EXTENTS_TO_FILE`_. Verify distinct file identities, exact
    bytes and lengths, and writes in both directions. Preserve existing targets
    and remove only the destination created by this operation on failure.
    An OS version or filesystem label alone cannot satisfy the probe.
 
-3. **Port lock ownership and publication.** Python's Git/workspace/leaf locks
-   need Windows shared, exclusive, blocking, and nonblocking equivalents.
+3. **Port managed lock ownership and publication.** Standalone Git locks use
+   blocking ``LockFileEx`` on a dedicated file. Workspace and leaf locks still
+   need shared, exclusive, blocking, and nonblocking equivalents, including
+   inherited ownership across supervised processes.
    Rust ``crates/cowtree-metadata/src/objects.rs`` uses ``rustix::fs::flock`` on
    an open directory to exclude garbage collection during object publication.
    Give it a stable Windows lock object with the same lifetime and exclusion

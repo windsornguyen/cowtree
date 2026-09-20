@@ -111,6 +111,14 @@ class CowtreeCLI:
     def run(self, argv: list[str]) -> int:
         """Parse explicit arguments and return the command's exit status."""
         if argv[:1] == ["workspace"]:
+            if sys.platform == "win32":
+                error = CowtreeError(
+                    CowtreeErrorCode.COW_UNAVAILABLE,
+                    "managed workspaces are not yet supported on Windows; use standalone commands",
+                )
+                print(Failure.from_error(error=error).json(), file=sys.stderr)
+                code = 1
+                return code
             from cowtree.workspace_cli import run
 
             code = run(argv=argv[1:])

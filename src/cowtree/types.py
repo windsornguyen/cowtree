@@ -59,6 +59,7 @@ class FilesystemKind(str, Enum):
 
     CLONEFILE = "clonefile"
     REFLINK = "reflink"
+    BLOCK_CLONE = "block_clone"
     UNSUPPORTED = "unsupported"
 
 
@@ -67,6 +68,7 @@ class CloneTool(str, Enum):
 
     MACOS_CLONEFILE = "clonefile(2)"
     LINUX_FICLONE = "FICLONE"
+    WINDOWS_EXTENTS = "FSCTL_DUPLICATE_EXTENTS_TO_FILE"
 
 
 @dataclass(frozen=True)

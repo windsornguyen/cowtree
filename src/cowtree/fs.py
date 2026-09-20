@@ -40,6 +40,14 @@ def doctor(path: Path) -> DoctorReport:
         )
         return report
 
+    if system == "Windows":
+        report = clone_probe_report(
+            path=resolved,
+            filesystem=FilesystemKind.BLOCK_CLONE,
+            clone_tool=CloneTool.WINDOWS_EXTENTS,
+        )
+        return report
+
     report = DoctorReport(
         path=resolved,
         filesystem=FilesystemKind.UNSUPPORTED,
