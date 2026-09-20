@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-import fcntl
 from pathlib import Path
+import sys
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
+from cowtree.locks import exclusive
 from cowtree.types import Checkout, CommandResult, FileMode, TrackedFile, Worktree
 
 
@@ -54,7 +55,7 @@ class GitRepository:
                 "-c",
                 "core.ignorestat=false",
                 "-c",
-                "core.filemode=true",
+                "core.filemode=false" if sys.platform == "win32" else "core.filemode=true",
                 "status",
                 "--porcelain=v1",
                 "-z",
@@ -82,12 +83,8 @@ class GitRepository:
         common = self.capture(args=["rev-parse", "--path-format=absolute", "--git-common-dir"])
         path = Path(common.removesuffix("\n")) / "cowtree.lock"
         # Keep one inode for all waiters.
-        with path.open("a+b") as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            try:
-                yield lock.fileno()
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        with path.open("a+b") as lock, exclusive(descriptor=lock.fileno()):
+            yield lock.fileno()
 
     def snapshot(self) -> Checkout:
         """Pin a complete, clean source checkout and its tracked manifest."""

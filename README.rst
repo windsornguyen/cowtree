@@ -224,6 +224,16 @@ Native clone mechanisms are:
 
 * macOS APFS: ``clonefile(2)``.
 * Linux filesystems supporting reflinks: ``FICLONE`` directly, without ``cp``.
+* Windows volumes with block refcounting, including ReFS:
+  ``FSCTL_DUPLICATE_EXTENTS_TO_FILE``. Standalone commands use native byte-range
+  locks. Git executable bits are retained in the index; Windows does not expose
+  POSIX executable permissions. Real symlinks require Windows symlink privileges
+  and a checkout configured to preserve them.
+
+Windows support covers standalone commands only. Managed commands return a typed
+unsupported result before creating state. Their lock inheritance, process
+supervision, and durability port is tracked separately. See
+`Windows qualification <docs/windows-native.rst>`_.
 
 A real clone probe establishes support. Filesystem names alone are insufficient.
 Cowtree has no ordinary-copy fallback. Run ``cowtree doctor DIRECTORY`` on the

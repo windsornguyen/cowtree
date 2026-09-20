@@ -14,10 +14,12 @@ source/destination writes. A separate NTFS directory must reject cloning without
 creating a destination. Each job detaches its own disk before deleting it.
 The Dev Drive fixture reserves 64 GiB virtually, without preallocating it.
 
-This layer qualifies the native file primitive, not the complete Windows CLI
-or managed workspace lifecycle. Repository locking, executable-mode semantics,
-durable directory operations, and supervised process ownership need separate
-Windows contracts and tests before those interfaces can advertise support.
+The standalone CLI uses LockFileEx for repository serialization and preserves
+Git's executable-mode records without assuming POSIX permissions. Its tests run
+the complete add/doctor/remove flow, dirty-removal refusal, and concurrent forks.
+Managed commands fail with a typed unsupported result before creating state.
+Their directory durability and supervised process ownership require a separate
+Windows port before the managed lifecycle can advertise support.
 
 References:
 

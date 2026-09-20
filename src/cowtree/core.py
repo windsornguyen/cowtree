@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 import os
 from pathlib import Path
 import stat
+import sys
 
 from cowtree.committed_source import CommittedSource
 from cowtree.errors import CowtreeError, CowtreeErrorCode
@@ -244,7 +245,9 @@ class WorktreeCreation:
             raise CowtreeError(
                 CowtreeErrorCode.DIRTY_SOURCE, f"tracked file type changed: {entry.path}"
             )
-        if bool(mode & stat.S_IXUSR) != (entry.mode is FileMode.EXECUTABLE):
+        if sys.platform != "win32" and bool(mode & stat.S_IXUSR) != (
+            entry.mode is FileMode.EXECUTABLE
+        ):
             raise CowtreeError(
                 CowtreeErrorCode.DIRTY_SOURCE, f"tracked executable mode changed: {entry.path}"
             )
