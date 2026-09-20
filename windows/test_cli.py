@@ -103,3 +103,21 @@ def test_managed_commands_fail_before_creating_state(tmp_path: Path) -> None:
     assert error.code is CowtreeErrorCode.COW_UNAVAILABLE
     assert "managed workspaces" in error.message
     assert not store.exists()
+
+
+def test_git_modes_and_real_symlink_text_are_preserved(tmp_path: Path) -> None:
+    io = CommandRunner()
+    source = repository(io=io, root=tmp_path)
+    io.run(argv=["git", "-C", str(source), "config", "core.symlinks", "true"])
+    (source / "alias").symlink_to("file.txt")
+    io.run(argv=["git", "-C", str(source), "add", "alias"])
+    io.run(argv=["git", "-C", str(source), "update-index", "--chmod=+x", "file.txt"])
+    io.run(argv=["git", "-C", str(source), "commit", "-qm", "modes"])
+    target = tmp_path / "target"
+    res = cli(io=io, command=["add", str(target)], cwd=source)
+    assert res.returncode == 0, res.stderr
+    assert (target / "alias").is_symlink()
+    assert os.readlink(target / "alias") == os.readlink(source / "alias")
+    tracked = io.run(argv=["git", "-C", str(target), "ls-files", "--stage", "file.txt"])
+    assert tracked.stdout.startswith("100755 ")
+    assert not io.run(argv=["git", "-C", str(target), "status", "--porcelain"]).stdout
