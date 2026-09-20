@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -87,6 +88,24 @@ def capture_entry(
     elif stat.S_ISLNK(before.st_mode):
         kind = TreeKind.SYMLINK
         link = os.readlink(source)
+        if classification is PathClass.DERIVED:
+            try:
+                target = source.resolve(strict=True)
+            except FileNotFoundError:
+                target = source.resolve()
+            except (RuntimeError, OSError) as error:
+                if isinstance(error, OSError) and error.errno != errno.ELOOP:
+                    raise
+                raise CowtreeError(
+                    CowtreeErrorCode.UNSUPPORTED_MODE, f"unresolvable derived symlink: {path}"
+                ) from error
+            if Path(link).anchor or not any(
+                target.is_relative_to(root.resolve() / prefix) for prefix in policy.derived
+            ):
+                raise CowtreeError(
+                    CowtreeErrorCode.UNSUPPORTED_MODE,
+                    f"derived symlink escapes private cache: {path}",
+                )
         digest = hashlib.sha256(os.fsencode(link)).hexdigest()
     elif stat.S_ISREG(before.st_mode):
         if before.st_nlink != 1 and not (

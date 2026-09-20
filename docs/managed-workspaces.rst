@@ -48,6 +48,11 @@ clones each derived pathname to a separate inode. The default ``reject`` policy
 refuses those inputs. Source hard links remain unsupported. See
 `Cargo workspace qualification <cargo-workspaces.rst>`_.
 
+Derived symlinks must use relative targets that resolve within selected cache
+prefixes. Absolute links and escaping or cyclic links are rejected. A ``target``
+symlink to an external compiler cache would otherwise let every leaf write into
+the same directory. Select a real private cache directory for inheritance.
+
 Tracked source cannot be reclassified as derived or ephemeral. Overlapping policy
 prefixes fail. Forks inherit eligible cache bytes, modes, and modification times
 through private CoW copies; cache writes remain isolated. Source publication
