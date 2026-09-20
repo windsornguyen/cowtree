@@ -2,7 +2,10 @@
 
 //! Parse the supported standalone contract without forwarding unknown Git flags.
 
-use clap::{Args, Parser, Subcommand};
+use clap::{
+    Args, Parser, Subcommand,
+    builder::{NonEmptyStringValueParser, OsStringValueParser, TypedValueParser},
+};
 use cowtree::{AddRequest, Branch, Lock, SourceMode};
 use std::{ffi::OsString, path::PathBuf};
 
@@ -37,9 +40,9 @@ pub(crate) enum Operation {
 #[derive(Args)]
 #[command(group(clap::ArgGroup::new("branch_mode").args(["new_branch", "existing_branch", "detach"])))]
 pub(crate) struct Add {
-    #[arg(short = 'b')]
+    #[arg(short = 'b', value_parser = nonempty())]
     new_branch: Option<OsString>,
-    #[arg(long = "branch")]
+    #[arg(long = "branch", value_parser = nonempty())]
     existing_branch: Option<OsString>,
     #[arg(long, short = 'd')]
     detach: bool,
@@ -47,10 +50,20 @@ pub(crate) struct Add {
     committed: bool,
     #[arg(long)]
     lock: bool,
-    #[arg(long, requires = "lock")]
+    #[arg(long, requires = "lock", value_parser = NonEmptyStringValueParser::new())]
     reason: Option<String>,
     path: PathBuf,
+    #[arg(value_parser = nonempty())]
     revision: Option<OsString>,
+}
+
+fn nonempty() -> impl TypedValueParser<Value = OsString> {
+    OsStringValueParser::new().try_map(|value| {
+        if value.is_empty() {
+            return Err("value must be nonempty");
+        }
+        Ok(value)
+    })
 }
 
 impl Add {

@@ -22,8 +22,9 @@ from tests.conftest import Repository
 
 @pytest.fixture(autouse=True)
 def installed_extension(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Select the entry point installed beside the running test interpreter."""
-    binaries = str(Path(sys.executable).parent)
+    """Select the native test binary or the installed Python entry point explicitly."""
+    binary = os.environ.get("COWTREE_TEST_BINARY")
+    binaries = str(Path(sys.executable if binary is None else binary).parent)
     assert shutil.which("git-cowtree", path=binaries) is not None
     monkeypatch.setenv("PATH", binaries + os.pathsep + os.environ["PATH"])
 
