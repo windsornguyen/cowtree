@@ -7,6 +7,9 @@ use serde_json::value::RawValue;
 use std::{ffi::OsStr, path::Path};
 
 pub(crate) fn path<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S::Error> {
+    if let Some(text) = path.to_str() {
+        return serializer.serialize_str(text);
+    }
     let encoded = encode(path.as_os_str()).map_err(serde::ser::Error::custom)?;
     encoded.serialize(serializer)
 }
