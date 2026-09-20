@@ -41,6 +41,8 @@ pub enum Error {
     Hardlink { path: PathBuf },
     #[error("unsupported file type: {path}")]
     UnsupportedFile { path: PathBuf },
+    #[error("derived symlink escapes or cannot resolve within private cache: {path}")]
+    DerivedLink { path: PathBuf },
     #[error("source changed during capture: {path}")]
     SourceChanged { path: PathBuf },
     #[error("native cloning is unavailable on this platform")]
@@ -64,7 +66,9 @@ impl Error {
             | Self::PolicyOverlap
             | Self::TargetContainsData { .. } => "invalid_arguments",
             Self::ModeMismatch { .. } | Self::SourceChanged { .. } => "dirty_source",
-            Self::Hardlink { .. } | Self::UnsupportedFile { .. } => "unsupported_mode",
+            Self::Hardlink { .. } | Self::UnsupportedFile { .. } | Self::DerivedLink { .. } => {
+                "unsupported_mode"
+            }
             Self::UnsupportedPlatform => "cow_unavailable",
             Self::Cleanup { .. } => "cleanup_failed",
             Self::Io { source, .. } if clone_unavailable(source) => "cow_unavailable",

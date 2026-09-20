@@ -17,6 +17,8 @@ mod populate;
 mod probe;
 mod tree_clone;
 mod tree_entry;
+#[cfg(unix)]
+mod tree_links;
 mod tree_policy;
 mod tree_scan;
 mod worktree;

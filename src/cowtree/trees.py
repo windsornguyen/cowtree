@@ -42,7 +42,9 @@ def scan_tree(
     root: Path, policy: PathPolicy, *, capture: CaptureMode = CaptureMode.CONTENT
 ) -> tuple[TreeEntry, ...]:
     record = invoke(
-        operation=partial(_libcowtree.scan_tree, root=root, policy=policy, mode=capture_mode(capture))
+        operation=partial(
+            _libcowtree.scan_tree, root=root, policy=policy, mode=capture_mode(capture)
+        )
     )
     result = ENTRIES.validate_python(json.loads(record))
     return result
@@ -61,7 +63,10 @@ def populate_tree(
 ) -> tuple[TreeEntry, ...]:
     record = invoke(
         operation=partial(
-            _libcowtree.populate_tree, source=source, target=target, policy=policy,
+            _libcowtree.populate_tree,
+            source=source,
+            target=target,
+            policy=policy,
             mode=capture_mode(capture),
         )
     )
