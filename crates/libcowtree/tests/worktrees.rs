@@ -30,6 +30,7 @@ fn repository(root: &Path) -> Result<PathBuf, Box<dyn Error>> {
     git(&source, &["config", "user.name", "Cowtree test"])?;
     git(&source, &["config", "user.email", "test@example.invalid"])?;
     git(&source, &["config", "commit.gpgsign", "false"])?;
+    git(&source, &["config", "core.autocrlf", "false"])?;
     fs::write(source.join("file"), b"original\n")?;
     git(&source, &["add", "file"])?;
     git(&source, &["commit", "-qm", "fixture"])?;
@@ -93,6 +94,29 @@ fn committed_fork_preserves_staged_and_unstaged_edits() -> Result<(), Box<dyn Er
     assert_eq!(fs::read(source.join("file"))?, b"unstaged edit\n");
     assert_eq!(git(&source, &["diff", "--cached"])?, index);
     assert_eq!(list_worktrees(Some(&source))?.len(), 2);
+    remove_worktree(&tree.path, Some(&source), false)?;
+    Ok(())
+}
+
+#[test]
+fn committed_fork_applies_checkout_conversions_without_changing_source()
+-> Result<(), Box<dyn Error>> {
+    let directory = tempfile::tempdir()?;
+    if !native(directory.path())? {
+        return Ok(());
+    }
+    let source = repository(directory.path())?;
+    fs::write(source.join(".gitattributes"), b"file text eol=crlf\n")?;
+    git(&source, &["add", ".gitattributes"])?;
+    git(&source, &["commit", "-qm", "checkout conversion"])?;
+    fs::write(source.join("file"), b"private edit\n")?;
+    let mut request = AddRequest::new(directory.path().join("converted"));
+    request.source = Some(source.clone());
+    request.source_mode = SourceMode::Committed;
+    let tree = add_worktree(&request)?;
+    assert_eq!(fs::read(tree.path.join("file"))?, b"original\r\n");
+    assert_eq!(fs::read(source.join("file"))?, b"private edit\n");
+    assert_eq!(git(&tree.path, &["status", "--porcelain"])?, "");
     remove_worktree(&tree.path, Some(&source), false)?;
     Ok(())
 }
