@@ -17,7 +17,7 @@ regeneration before running the local check; CI compares against committed files
 
 | Source             | Generated workflow or action                                             |
 | ------------------ | ------------------------------------------------------------------------ |
-| `ci.ts`            | Python CI, native filesystem checks, protocol model, generated-file gate |
+| `ci.ts`            | Python CI, declarative schema, native filesystem checks, protocol model, generated-file gate |
 | `metadata.ts`      | SQLite Linux/macOS checks and minimum Rust compiler                      |
 | `vouch.ts`         | Contributor eligibility and issue-based vouch management                 |
 | `vouch-actions.ts` | Typed PR resolution and eligibility actions                              |
@@ -27,6 +27,11 @@ Simple commands use Hollywood's structured executable/argument API. Stateful
 steps use typed action inputs and `ScriptExec`; no `unsafeShell` is used. The
 existing Python/Rust runners and test commands are preserved. Vouch and the new
 generation check use `ubuntu-24.04`.
+
+The declarative-schema job builds the Apache-2.0 Atlas Community CLI from the
+commit in `tools/atlas-revision.txt` with Go 1.26.5. It checks the generated SQL
+and runs the real SQLite generation fixtures. The external source checkout has
+credentials disabled; no Atlas account or proprietary binary is used.
 
 ## Trusted Vouch code
 

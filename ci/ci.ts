@@ -1,4 +1,5 @@
 import { always, defineMatrix, expr, job, workflow } from "@dedalus-labs/hollywood";
+import { readFileSync } from "node:fs";
 import { checkout, run, setupNode, uv } from "./steps.ts";
 import { nativeFilesystems } from "./native.ts";
 import { uses } from "@dedalus-labs/hollywood";
@@ -8,6 +9,9 @@ const python = defineMatrix({
   "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],
 });
 const setupUv = { uses: uv.uses } as const;
+const atlasRevision = readFileSync("tools/atlas-revision.txt", "utf8").trim();
+if (!/^[a-f0-9]{40}$/.test(atlasRevision)) throw new Error("Atlas revision must be a full Git commit");
+const atlasPath = expr<string>("format('{0}/.tools/atlas', github.workspace)");
 
 export const ci = workflow(
   {
@@ -24,6 +28,52 @@ export const ci = workflow(
           setupNode,
           run("Install workflow dependencies", "npm", ["ci", "--ignore-scripts"]),
           run("Check typed workflows and generated files", "npm", ["run", "ci", "check"]),
+        ],
+      }),
+      schema: job({
+        name: "Declarative schema",
+        "runs-on": "ubuntu-24.04",
+        "timeout-minutes": 15,
+        env: {
+          COWTREE_ATLAS: atlasPath,
+          GOTOOLCHAIN: "local",
+          ATLAS_NO_UPDATE_NOTIFIER: "1",
+          ATLAS_NO_UPGRADE_SUGGESTIONS: "1",
+        },
+        steps: [
+          checkout,
+          {
+            ...checkout,
+            name: "Check out Atlas Community source",
+            with: {
+              repository: "ariga/atlas",
+              ref: atlasRevision,
+              path: ".tools/atlas-source",
+              "persist-credentials": false,
+            },
+          },
+          {
+            uses: "actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16",
+            with: {
+              "go-version": "1.26.5",
+              "cache-dependency-path": ".tools/atlas-source/**/go.sum",
+            },
+          },
+          {
+            ...run("Build Atlas Community", "go", [
+              "build", "-mod=readonly", "-trimpath", "-o",
+              atlasPath, ".",
+            ]),
+            "working-directory": ".tools/atlas-source/cmd/atlas",
+          },
+          uv,
+          run("Install Python test dependencies", "uv", ["sync", "--locked", "--group", "test"]),
+          run("Check generated SQLite schema", "uv", [
+            "run", "python", "scripts/schema.py", "check", "--atlas", ".tools/atlas",
+          ]),
+          run("Test declarative schema generation", "uv", [
+            "run", "pytest", "-q", "tests/test_schema_generation.py",
+          ]),
         ],
       }),
       lint: job({

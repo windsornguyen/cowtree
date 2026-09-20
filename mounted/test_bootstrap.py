@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 import pytest
 
 from cowtree.errors import CowtreeError
@@ -38,6 +38,34 @@ def metadata_binary() -> Path:
     binary = Path(__file__).resolve().parents[1] / "target/debug/cowtree-metadata"
     assert binary.is_file(), "build the production metadata binary before mounted integration"
     return binary
+
+
+def test_workspace_records_only_the_current_declaration(tmp_path: Path) -> None:
+    source = source_repository(path=tmp_path / "source")
+    workspace = Workspace.create(
+        root=tmp_path / "workspace", source=source, binary=metadata_binary(), policy=PathPolicy()
+    )
+    record = TypeAdapter(dict[str, JsonValue]).validate_json(
+        (workspace.root / "workspace.json").read_bytes()
+    )
+    assert "schema_version" not in record
+    assert Workspace.open(root=workspace.root).config == workspace.config
+
+
+@pytest.mark.parametrize("missing", ["trash", "receipts"])
+def test_missing_workspace_layout_is_rejected_without_recreation(
+    tmp_path: Path, missing: str
+) -> None:
+    source = source_repository(path=tmp_path / "source")
+    workspace = Workspace.create(
+        root=tmp_path / "workspace", source=source, binary=metadata_binary(), policy=PathPolicy()
+    )
+    (workspace.root / missing).rmdir()
+    before = (workspace.root / "workspace.json").read_bytes()
+    with pytest.raises(CowtreeError, match="workspace layout mismatch"):
+        Workspace.open(root=workspace.root)
+    assert not (workspace.root / missing).exists()
+    assert (workspace.root / "workspace.json").read_bytes() == before
 
 
 def test_workspace_import_connects_real_source_to_sqlite(tmp_path: Path) -> None:

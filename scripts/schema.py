@@ -1,0 +1,167 @@
+"""Generate the current SQLite schema and review diffs with pinned Atlas Community."""
+
+import argparse
+from enum import Enum
+import hashlib
+from itertools import pairwise
+import os
+from pathlib import Path
+import re
+import sqlite3
+import subprocess
+import tempfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DECLARATION = ROOT / "crates/cowtree-metadata/schema.sql"
+GENERATED = ROOT / "crates/cowtree-metadata/src/schema.sql"
+SQL_TOKENS = re.compile(
+    r"--[^\n]*|/\*[\s\S]*?(?:\*/|$)|'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\""
+    r"|`(?:``|[^`])*`|\[[^\]]*\]|(?P<word>[A-Za-z_][A-Za-z_0-9]*)"
+)
+
+
+class Action(str, Enum):
+    GENERATE = "generate"
+    CHECK = "check"
+    DIFF = "diff"
+
+
+class Arguments(argparse.Namespace):
+    action: Action
+    atlas: Path
+    from_schema: Path | None
+
+
+def declaration_authorizer(
+    action: int, table: str | None, column: str | None, database: str | None, trigger: str | None
+) -> int:
+    """Keep declarations free of user data, attached databases, and persistent settings."""
+    del column, trigger
+    data_write = action in (sqlite3.SQLITE_INSERT, sqlite3.SQLITE_UPDATE, sqlite3.SQLITE_DELETE)
+    external = action in (
+        sqlite3.SQLITE_ATTACH,
+        sqlite3.SQLITE_DETACH,
+        sqlite3.SQLITE_PRAGMA,
+        sqlite3.SQLITE_CREATE_VTABLE,
+    )
+    denied = (
+        external
+        or database not in (None, "main")
+        or (data_write and table not in ("sqlite_master", "sqlite_temp_master"))
+    )
+    result = sqlite3.SQLITE_DENY if denied else sqlite3.SQLITE_OK
+    return result
+
+
+def validate_declaration(sql: str) -> None:
+    """Reject objects the Community differ silently omits before invoking it."""
+    words = [
+        match.group().upper() for match in SQL_TOKENS.finditer(sql) if match.lastgroup == "word"
+    ]
+    if {"COLLATE", "DEFERRABLE"}.intersection(words) or ("ON", "CONFLICT") in pairwise(words):
+        raise ValueError("unsupported declaration clause: COLLATE, DEFERRABLE, or ON CONFLICT")
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.set_authorizer(declaration_authorizer)
+        try:
+            connection.executescript(sql)
+        except sqlite3.DatabaseError as error:
+            raise ValueError(f"invalid schema-only declaration: {error}") from error
+        unsupported = connection.execute(
+            "SELECT type, name FROM sqlite_schema WHERE type NOT IN ('table', 'index') "
+            "AND name NOT GLOB 'sqlite_*' ORDER BY type, name"
+        ).fetchall()
+        if unsupported:
+            raise ValueError(f"Atlas Community does not support these objects: {unsupported}")
+    finally:
+        connection.close()
+
+
+def verify_atlas(atlas: Path) -> str:
+    """Require the exact unmodified public source build, not the proprietary distribution."""
+    revision = (ROOT / "tools/atlas-revision.txt").read_text().strip()
+    result = subprocess.run(  # noqa: S603
+        ["go", "version", "-m", str(atlas)],  # noqa: S607
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    metadata = set(result.stdout.split())
+    if (
+        not {"ariga.io/atlas/cmd/atlas", f"vcs.revision={revision}", "vcs.modified=false"}
+        <= metadata
+    ):
+        raise ValueError(f"Atlas must be built from unmodified Community source {revision}")
+    return revision
+
+
+def render(atlas: Path, declaration: Path, before: Path | None = None) -> str:
+    """Freeze SQL inputs, then generate a deterministic plan without changing a store."""
+    revision = verify_atlas(atlas=atlas)
+    desired = declaration.read_text()
+    validate_declaration(sql=desired)
+    previous = "" if before is None else before.read_text()
+    validate_declaration(sql=previous)
+    environment = dict(os.environ, ATLAS_NO_UPDATE_NOTIFIER="1", ATLAS_NO_UPGRADE_SUGGESTIONS="1")
+    with tempfile.TemporaryDirectory(prefix="cowtree-schema-") as temporary:
+        directory = Path(temporary)
+        source, target = directory / "before.sql", directory / "desired.sql"
+        source.write_text(previous)
+        target.write_text(desired)
+        try:
+            result = subprocess.run(  # noqa: S603
+                [
+                    str(atlas.resolve()),
+                    "schema",
+                    "diff",
+                    "--from",
+                    source.as_uri(),
+                    "--to",
+                    target.as_uri(),
+                    "--dev-url",
+                    "sqlite://cowtree-schema?mode=memory",
+                ],
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.CalledProcessError as error:
+            raise ValueError(f"Atlas schema diff failed: {error.stderr.strip()}") from error
+    watermark = (
+        "-- Code generated by scripts/schema.py with Atlas Community; DO NOT EDIT.\n"
+        f"-- Atlas source: {revision}\n"
+        f"-- Declaration SHA-256: {hashlib.sha256(desired.encode()).hexdigest()}\n"
+    )
+    if before is not None:
+        watermark += (
+            f"-- From declaration SHA-256: {hashlib.sha256(previous.encode()).hexdigest()}\n"
+        )
+    output = watermark + result.stdout.rstrip() + "\n"
+    return output
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", type=Action, choices=list(Action))
+    parser.add_argument("--atlas", type=Path, default=ROOT / ".tools/atlas")
+    parser.add_argument("--from-schema", type=Path)
+    args = parser.parse_args(namespace=Arguments())
+    if (args.action is Action.DIFF) != (args.from_schema is not None):
+        parser.error("diff requires --from-schema; generate and check do not accept it")
+    output = render(atlas=args.atlas, declaration=DECLARATION, before=args.from_schema)
+    match args.action:
+        case Action.GENERATE:
+            GENERATED.write_text(output)
+        case Action.CHECK:
+            if GENERATED.read_text() != output:
+                raise SystemExit("generated schema is stale; run scripts/schema.py generate")
+        case Action.DIFF:
+            print(output, end="")
+
+
+if __name__ == "__main__":
+    main()

@@ -17,7 +17,6 @@ use std::{
 };
 
 const APPLICATION_ID: i64 = 0x43575452;
-const SCHEMA_VERSION: i64 = 4;
 
 /// One connection to the same-host SQLite authority and its immutable object directory.
 pub struct Store {
@@ -47,7 +46,6 @@ impl Store {
         tx.execute("INSERT INTO settings VALUES(1,?1,0,1,1)", [serde_json::to_string(&limits)?])?;
         tx.execute("INSERT INTO epochs VALUES(0,?1)", [root_hash.as_str()])?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         crate::durability::sync_directory(root)
             .map_err(|source| Error::Io { path: root.into(), source })?;
@@ -68,14 +66,15 @@ impl Store {
         )?;
         let application: i64 =
             connection.pragma_query_value(None, "application_id", |r| r.get(0))?;
-        let schema: i64 = connection.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if application != APPLICATION_ID || !(1..=SCHEMA_VERSION).contains(&schema) {
+        if application != APPLICATION_ID {
+            return Err(Error::Schema);
+        }
+        let declared = Connection::open_in_memory()?;
+        declared.execute_batch(include_str!("schema.sql"))?;
+        if schema(&connection)? != schema(&declared)? {
             return Err(Error::Schema);
         }
         configure(&connection)?;
-        if schema != SCHEMA_VERSION {
-            migrate(&connection)?;
-        }
         let raw: String = connection.query_row(
             "SELECT limits_json FROM settings WHERE singleton=1",
             [],
@@ -273,26 +272,27 @@ pub(crate) fn next_token(tx: &Transaction<'_>) -> Result<i64> {
     Ok(token)
 }
 
-// Re-read the version under the writer lock so concurrent openers migrate once.
-fn migrate(connection: &Connection) -> Result<()> {
-    let tx = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
-    let version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    match version {
-        SCHEMA_VERSION => return Ok(()),
-        1 => tx.execute_batch("ALTER TABLE proposals ADD COLUMN batch_id TEXT;")?,
-        2 | 3 => {}
-        _ => return Err(Error::Schema),
-    }
-    if version < 3 {
-        tx.execute_batch("CREATE TABLE client_pins(object TEXT PRIMARY KEY);")?;
-    }
-    tx.execute_batch(
-        "CREATE TABLE imports(singleton INTEGER PRIMARY KEY CHECK(singleton=1), root TEXT NOT NULL,
-         manifest_json TEXT NOT NULL);
-         CREATE TABLE import_progress(singleton INTEGER PRIMARY KEY REFERENCES imports(singleton),
-         completed INTEGER NOT NULL CHECK(completed>=0), complete INTEGER NOT NULL CHECK(complete IN (0,1)));",
+#[derive(PartialEq, Eq)]
+struct SchemaObject {
+    kind: String,
+    name: String,
+    table: String,
+    sql: String,
+}
+
+fn schema(connection: &Connection) -> Result<Vec<SchemaObject>> {
+    let mut statement = connection.prepare(
+        "SELECT type,name,tbl_name,sql FROM sqlite_schema
+         WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name",
     )?;
-    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-    tx.commit()?;
-    Ok(())
+    let rows = statement.query_map([], |row| {
+        Ok(SchemaObject {
+            kind: row.get(0)?,
+            name: row.get(1)?,
+            table: row.get(2)?,
+            sql: row.get(3)?,
+        })
+    })?;
+    let objects = rows.collect::<std::result::Result<_, _>>()?;
+    Ok(objects)
 }

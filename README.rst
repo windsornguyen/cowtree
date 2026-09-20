@@ -16,6 +16,9 @@ Managed workspaces
 ``cowtree workspace`` adds warm cache inheritance, retained private checkpoints,
 checked source publication, synchronization, recovery, and collection. The Rust
 SQLite service owns publication; Python owns the real filesystem installation.
+The `declarative schema workflow <docs/schema.rst>`_ generates watermarked SQLite
+DDL with Atlas Community. Prerelease stores accept only the current schema;
+there is no numbered schema history or automatic upgrade path.
 
 Start with the `managed workspace guide <docs/managed-workspaces.rst>`_. It lists
 the complete CLI and Python API, JSON failures, editor coordination rules, and

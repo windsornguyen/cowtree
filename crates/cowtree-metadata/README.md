@@ -89,12 +89,11 @@ member cannot commit through the single-candidate interface. Low-level preparati
 and commit do not run checks; managed clients validate the exact union candidate
 before calling commit.
 
-Schema version 2 introduced nullable `proposals.batch_id`; version 3 adds client
-object pins; version 4 adds an immutable initial-import manifest and a separate
-small progress row. Opening a version 1, 2, or 3 store migrates it in one serialized
-transaction, preserving pending attempts, receipts, and counters. Unsupported
-versions fail. Physical installation records remain
-owned by the Python workspace; this schema has no filesystem bindings.
+Prerelease stores must match the current declaration bundled with the executable.
+Opening an incompatible schema fails without schema or data migration. The
+[declarative workflow](../../docs/schema.rst) generates SQL and reviewable diffs;
+it does not upgrade live stores. Physical installation records remain owned by
+the Python workspace; this schema has no filesystem bindings.
 
 Failures use `database_busy` with `retry_same_request` only for SQLite BUSY/LOCKED.
 A tip change requires `reprepare`; a stale origin requires `resolve_conflict`.
@@ -148,7 +147,7 @@ and prepared parents. It also protects lease origins, dirty views, upload hashes
 pending captured entries, candidate manifests, and durable client origin pins.
 `replace_client_pins` is owned by one serialized filesystem adapter. It must retain
 old roots until replacement client records are durable; construction pins protect
-new objects during the transition. Schema 3 introduced these pins; schema 4 preserves them when upgrading older stores. Receipts prove publication but
+new objects during the transition. Receipts prove publication but
 do not keep bytes alive; pin a version when its bytes must survive later pruning.
 A per-leaf sequence high-water mark prevents an expired request from executing
 again; dropping a leaf does not allow reuse of its identity.

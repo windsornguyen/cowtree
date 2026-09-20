@@ -47,7 +47,9 @@ Corrupt or changed captured bytes fail explicitly rather than being recaptured.
 The Python API exposes ``Workspace.import_status(root)`` and
 ``Workspace.recover_initialization(root)``. Standalone authority users have
 ``begin_import``, ``import_chunk``, ``status_import``, and ``finish_import``.
-Schemas 1 through 3 migrate transactionally to schema 4. Import failures include
+Stores must match the current declaration; opening an incompatible store fails
+without schema or data migration. See `Declarative schema <schema.rst>`_. Import
+failures include
 ``import_conflict``, ``import_not_ready``, and ``import_source_changed``.
 
 Reproduction

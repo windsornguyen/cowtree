@@ -237,17 +237,6 @@ def test_receipts_and_pending_validation_keep_their_logs(tmp_path: Path) -> None
     assert Collector(leaves.workspace).collect().nodes == []
 
 
-def test_existing_workspace_adopts_collection_directories(tmp_path: Path) -> None:
-    leaves = manager(root=tmp_path)
-    root = leaves.workspace.root
-    (root / "trash").rmdir()
-    (root / "receipts").rmdir()
-    report = Collector(Workspace.open(root=root)).collect()
-    assert report.nodes == []
-    assert (root / "trash").is_dir()
-    assert (root / "receipts").is_dir()
-
-
 def test_unknown_operation_preserves_unreferenced_images(tmp_path: Path) -> None:
     from cowtree.errors import CowtreeError
 

@@ -202,9 +202,9 @@ An interrupted initialization before claiming its staging name can leave a priva
 temporary sibling; it cannot block retry and is not broadly deleted by recovery.
 
 A failure may arrive after durable work completed. Query ``result`` or reopen
-and recover before deciding to submit a new request. Schema-1/2/3 authority stores
-migrate transactionally to schema 4. Unsupported schema versions fail. The
-filesystem record schema remains 1 with additive collection directories.
+and recover before deciding to submit a new request. The authority schema and
+workspace layout must match the current release. Incompatible stores fail without
+schema or data migration. See `Declarative schema <schema.rst>`_.
 
 Use the managed API exclusively for its store. Calling raw authority mutations
 or editing client records bypasses its filesystem lock and is outside this contract.

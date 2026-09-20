@@ -118,14 +118,16 @@ gate below still needs approval for a production deployment.
    * - G7: Release, upgrade, restore, and rollback. Release owner and independent reviewer.
      - Bind CI and qualification results to the shipped artifacts. Preserve source,
        dependency, build-tool and license provenance; authenticate distributed
-       artifacts. Test installation on clean target hosts, upgrades with pending
-       work, and restoration of consistent database/object/Git state. Rehearse
-       rollback or restoration from backup when a schema downgrade is unsupported.
+       artifacts. Test installation on clean target hosts, safe handling of pending
+       work across releases, and restoration of consistent database/object/Git state.
+       Rehearse recovery with the matching release when a store is incompatible.
        Close blocking defects, document residual risks, and approve a staged rollout
        with explicit stop conditions.
-     - Partial. A relocated local macOS bundle and forward schema migrations have
-       tests. The local bundle is ad-hoc signed. A qualified release, operational
-       backup/restore drill, rollback rehearsal, and deployment signoff are open.
+     - Partial. A relocated local macOS bundle and rejection of incompatible stores
+       have tests. Prerelease stores use the current declaration without automatic
+       upgrades; see `Declarative schema <schema.rst>`_. The local bundle is ad-hoc
+       signed. A qualified release, operational backup/restore drill, rollback
+       rehearsal, and deployment signoff are open.
 
 Evidence to retain
 ------------------

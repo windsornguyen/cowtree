@@ -25,8 +25,9 @@ recursive deletion does not erase the information needed to finish cleanup.
 
 ``Collection`` returns newly quarantined node identities, retired check leaf IDs,
 and typed SQLite maintenance counts and file sizes. Cleanup resumed while opening
-a session is not counted again. Existing schema-1 stores adopt the additive
-``trash`` and ``receipts`` directories under the workspace lock.
+a session is not counted again. Required ``trash`` and ``receipts`` directories
+are created during initialization; opening an incompatible layout fails without
+adding missing directories.
 
 The mounted tests cover process exits after recording quarantine, renaming a node,
 removing its Git ref, and deleting part of its tree. They also overlap collection
@@ -58,6 +59,5 @@ contract. Construction upload/proposal pins protect newly published bytes until
 the successful client operation publishes its origin pins. On failure, old pins
 remain conservative until recovery reconciles durable records.
 
-SQLite schema 3 adds the pin table and atomically upgrades schema 1 or 2. Missing
-origin objects in an already damaged store are reported as errors; a filesystem
-snapshot is not substituted for the authoritative object store.
+Missing origin objects in an already damaged store are reported as errors; a
+filesystem snapshot is not substituted for the authoritative object store.

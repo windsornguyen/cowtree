@@ -24,6 +24,9 @@ caches were warm and were not flushed. Background activity was not controlled.
 
 The large fixture was Ruff commit
 ``5bb508f59481c1a02d5c7ff8568b9ffd8a763eef`` with a built Cargo target directory.
+The final managed-fork and bundled compiler measurements below use Cowtree
+``765151a``. They predate current-declaration schema checks; repeat measurements
+for a later runtime before using these observations as a latency budget.
 Its frozen node contained 17,695 regular files, one symlink, and 1,625 nested
 directories, with 2,699,414,721 logical file bytes. Cargo outputs were explicitly
 derived state and hard-link cloning was enabled. Source and cache files were

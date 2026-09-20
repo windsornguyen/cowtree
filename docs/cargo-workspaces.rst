@@ -31,7 +31,8 @@ must share a filesystem. The store and leaves must sit outside the source checko
 
        git clone https://github.com/windsornguyen/cowtree.git /absolute/tools/cowtree
        cd /absolute/tools/cowtree
-       git checkout --detach 369e39a8f1d7064c3cecac2a1f83322d7480a2f0
+       : "${COWTREE_REV:?Set COWTREE_REV to the reviewed commit hash}"
+       git checkout --detach "$COWTREE_REV"
        export COWTREE_CODE="$PWD"
        CARGO_TARGET_DIR="$COWTREE_CODE/target" \
          CARGO_BUILD_BUILD_DIR="$COWTREE_CODE/target" \
@@ -43,8 +44,8 @@ must share a filesystem. The store and leaves must sit outside the source checko
    When using an existing local checkout, verify ``git rev-parse HEAD`` and build
    from the selected revision. Keep the installation directory in place while
    its stores exist; each store records the metadata executable's absolute path.
-   These instructions use the reviewed revision above; test a newer tip explicitly
-   before replacing an existing store's executable.
+   Select the reviewed commit explicitly. Test a newer tip before replacing an
+   existing store's executable; incompatible prerelease layouts require a new store.
 
 2. Choose existing source and absent destination paths. Configure a Git author
    identity if ``git var GIT_AUTHOR_IDENT`` fails. Stop editors, watchers, and build

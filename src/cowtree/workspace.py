@@ -32,6 +32,9 @@ from cowtree.tree_types import PathPolicy
 from cowtree.workspace_types import Node, WorkspaceConfig
 
 
+DIRECTORIES = ("nodes", "leaves", "operations", "checks", "retained", "trash", "receipts")
+
+
 class Initialization(Record):
     target: Path
     source: Path
@@ -67,10 +70,14 @@ class Workspace:
             raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "workspace root is a symlink")
         root = root.resolve()
         config = WorkspaceConfig.model_validate_json((root / "workspace.json").read_bytes())
-        if config.schema_version != 1 or config.location != root:
-            raise CowtreeError(
-                CowtreeErrorCode.INVALID_ARGUMENTS, "workspace identity or schema mismatch"
-            )
+        if config.location != root:
+            raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "workspace identity mismatch")
+        for name in DIRECTORIES:
+            directory = root / name
+            if directory.is_symlink() or not directory.is_dir():
+                raise CowtreeError(
+                    CowtreeErrorCode.INVALID_ARGUMENTS, f"workspace layout mismatch: {name}"
+                )
         result = cls(root=root, config=config)
         return result
 
@@ -86,12 +93,6 @@ class Workspace:
                     raise CowtreeError(
                         CowtreeErrorCode.INVALID_ARGUMENTS, "workspace directory changed"
                     )
-                # Additive schema-1 layout upgrade for stores created before collection.
-                for name in ("trash", "receipts"):
-                    directory = self.root / name
-                    if not directory.exists():
-                        directory.mkdir(mode=0o700)
-                        sync_directory(path=self.root)
                 with Metadata(
                     root=self.root / "authority",
                     binary=self.config.binary,
@@ -202,7 +203,7 @@ class Workspace:
     def initialize(
         cls, staging: Path, root: Path, repository: GitRepository, binary: Path, policy: PathPolicy
     ) -> None:
-        for name in ("nodes", "leaves", "operations", "checks", "retained", "trash", "receipts"):
+        for name in DIRECTORIES:
             (staging / name).mkdir()
         with repository.lock() as descriptor:
             locked = GitRepository(

@@ -79,6 +79,32 @@ test("the Python and SQLite matrices and production test-hook checks stay intact
   assert.deepEqual(metadata.permissions, { contents: "read" });
 });
 
+test("schema checks build pinned community source and verify generated SQL", async () => {
+  const schema = ci.jobs.schema;
+  assert.equal(schema["runs-on"], "ubuntu-24.04");
+  const source = schema.steps.find(
+    (step) => "with" in step && step.with && "repository" in step.with && step.with.repository === "ariga/atlas",
+  );
+  assert.ok(source && "with" in source && source.with && "repository" in source.with);
+  const revision = (await readFile("tools/atlas-revision.txt", "utf8")).trim();
+  assert.match(revision, /^[a-f0-9]{40}$/);
+  assert.equal(source.with.ref, revision);
+  assert.equal(source.with.path, ".tools/atlas-source");
+  assert.equal(source.with["persist-credentials"], false);
+  const build = schema.steps.find((step) => "name" in step && step.name === "Build Atlas Community");
+  assert.ok(build && "run" in build && build.run?.kind === "command");
+  assert.equal(build["working-directory"], ".tools/atlas-source/cmd/atlas");
+  assert.equal(build.run.file, "go");
+  assert.ok(build.run.args.includes("-mod=readonly"));
+  assert.ok(build.run.args.includes("-trimpath"));
+  const commands = schema.steps.flatMap((step) =>
+    "run" in step && step.run?.kind === "command" ? [[step.run.file, ...step.run.args]] : [],
+  );
+  assert.ok(commands.some((args) => args.includes("scripts/schema.py") && args.includes("check")));
+  assert.ok(commands.some((args) => args.includes("tests/test_schema_generation.py")));
+  assert.equal(schema.env.COWTREE_ATLAS, "${{ format('{0}/.tools/atlas', github.workspace) }}");
+});
+
 test("privileged Vouch jobs load local code and policy only from the default branch", () => {
   const first = checkVouch.jobs.check.steps[0];
   assert.ok(first && "uses" in first && "with" in first);
