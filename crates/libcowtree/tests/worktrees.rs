@@ -3,7 +3,8 @@
 //! Real Git transactions preserve source edits, private worktrees, and branch ownership.
 
 use cowtree::{
-    AddRequest, Branch, SourceMode, add_worktree, inspect_path, list_worktrees, remove_worktree,
+    AddRequest, Branch, Lock, SourceMode, add_worktree, inspect_path, list_worktrees,
+    remove_worktree,
 };
 use std::{
     error::Error,
@@ -73,6 +74,34 @@ fn worktree_lifecycle_preserves_source_and_branch() -> Result<(), Box<dyn Error>
 }
 
 #[test]
+fn creation_reports_the_published_git_lock_state() -> Result<(), Box<dyn Error>> {
+    let directory = tempfile::tempdir()?;
+    if !native(directory.path())? {
+        return Ok(());
+    }
+    let source = repository(directory.path())?;
+    for (index, lock) in [
+        Lock::Release,
+        Lock::Retain { reason: None },
+        Lock::Retain { reason: Some("owned checkpoint".into()) },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut request = AddRequest::new(directory.path().join(format!("target-{index}")));
+        request.source = Some(source.clone());
+        request.lock = lock;
+        let created = add_worktree(&request)?;
+        let listed = list_worktrees(Some(&source))?
+            .into_iter()
+            .find(|tree| tree.path == created.path)
+            .ok_or("created worktree is absent")?;
+        assert_eq!(created, listed);
+    }
+    Ok(())
+}
+
+#[test]
 fn committed_fork_preserves_staged_and_unstaged_edits() -> Result<(), Box<dyn Error>> {
     let directory = tempfile::tempdir()?;
     if !native(directory.path())? {
@@ -118,6 +147,103 @@ fn committed_fork_applies_checkout_conversions_without_changing_source()
     assert_eq!(fs::read(source.join("file"))?, b"private edit\n");
     assert_eq!(git(&tree.path, &["status", "--porcelain"])?, "");
     remove_worktree(&tree.path, Some(&source), false)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn committed_checkout_runs_hooks_in_the_final_worktree() -> Result<(), Box<dyn Error>> {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir()?;
+    if !native(directory.path())? {
+        return Ok(());
+    }
+    let source = repository(directory.path())?;
+    let hook = source.join(".git/hooks/post-checkout");
+    fs::write(&hook, b"#!/bin/sh\nprintf '%s\\n' \"$PWD\" > \"$(git rev-parse --path-format=absolute --git-common-dir)/hook-target\"\n")?;
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))?;
+    let mut request = AddRequest::new(directory.path().join("final tree"));
+    request.source = Some(source.clone());
+    request.source_mode = SourceMode::Committed;
+    let tree = add_worktree(&request)?;
+    let observed = fs::read_to_string(source.join(".git/hook-target"))?;
+    assert_eq!(observed.trim_end(), tree.path.to_str().ok_or("non-UTF-8 test path")?);
+    assert!(!git(&source, &["worktree", "list", "--porcelain"])?.contains(".cowtree-seed-"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn committed_checkout_rejects_hook_edits_hidden_by_stat_settings() -> Result<(), Box<dyn Error>> {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir()?;
+    if !native(directory.path())? {
+        return Ok(());
+    }
+    let source = repository(directory.path())?;
+    git(&source, &["config", "core.trustctime", "false"])?;
+    git(&source, &["config", "core.checkstat", "minimal"])?;
+    let hook = source.join(".git/hooks/post-checkout");
+    fs::write(&hook, b"#!/bin/sh\nset -e\ntouch -t 200001010000 file\ngit update-index --refresh\nprintf 'modified\\n' > file\ntouch -t 200001010000 file\ntest -z \"$(git status --porcelain)\"\n")?;
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))?;
+    let mut request = AddRequest::new(directory.path().join("rejected"));
+    request.source = Some(source.clone());
+    request.source_mode = SourceMode::Committed;
+    request.branch = Branch::New("owned".into());
+    let error = add_worktree(&request).err().ok_or("hook edits were accepted")?;
+    assert_eq!(error.code(), "dirty_source");
+    assert!(!request.path.exists());
+    assert!(git(&source, &["branch", "--list", "owned"])?.is_empty());
+    assert_eq!(fs::read(source.join("file"))?, b"original\n");
+    Ok(())
+}
+
+#[test]
+fn committed_paths_do_not_alias_on_the_destination_filesystem() -> Result<(), Box<dyn Error>> {
+    for names in [["Alias", "alias"], ["Dir/one", "dir/two"]] {
+        let directory = tempfile::tempdir()?;
+        if !native(directory.path())? {
+            return Ok(());
+        }
+        fs::write(directory.path().join("CaseProbe"), b"probe")?;
+        let aliases = directory.path().join("caseprobe").exists();
+        let source = repository(directory.path())?;
+        let blob = git(&source, &["rev-parse", "HEAD:file"])?;
+        git(&source, &["read-tree", "--empty"])?;
+        for name in names {
+            git(
+                &source,
+                &[
+                    "-c",
+                    "core.ignorecase=false",
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    "100644",
+                    blob.trim(),
+                    name,
+                ],
+            )?;
+        }
+        let tree = git(&source, &["write-tree"])?;
+        let commit = git(&source, &["commit-tree", tree.trim(), "-p", "HEAD", "-m", "names"])?;
+        let mut request = AddRequest::new(directory.path().join("target"));
+        request.source = Some(source.clone());
+        request.source_mode = SourceMode::Committed;
+        request.revision = commit.trim().into();
+        let created = add_worktree(&request);
+        if aliases {
+            assert!(created.is_err(), "aliased paths accepted");
+            assert!(!request.path.exists());
+        } else {
+            let created = created?;
+            for name in names {
+                assert_eq!(fs::read(created.path.join(name))?, b"original\n");
+            }
+            remove_worktree(&created.path, Some(&source), false)?;
+        }
+        assert_eq!(fs::read(source.join("file"))?, b"original\n");
+    }
     Ok(())
 }
 
@@ -170,5 +296,39 @@ fn nested_worktrees_copy_only_pinned_files() -> Result<(), Box<dyn Error>> {
     assert!(!tree.path.join(".agents").exists());
     assert_eq!(git(&tree.path, &["status", "--porcelain"])?, "");
     remove_worktree(&tree.path, Some(&source), false)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn creation_rejects_source_bytes_hidden_by_stat_cache() -> Result<(), Box<dyn Error>> {
+    use std::{
+        fs::FileTimes,
+        time::{Duration, UNIX_EPOCH},
+    };
+    let root = tempfile::tempdir()?;
+    if !native(root.path())? {
+        return Ok(());
+    }
+    let source = repository(root.path())?;
+    let file = source.join("file");
+    let original = fs::read(&file)?;
+    let timestamp = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    git(&source, &["config", "core.trustctime", "false"])?;
+    git(&source, &["config", "core.checkstat", "minimal"])?;
+    fs::File::open(&file)?.set_times(FileTimes::new().set_modified(timestamp))?;
+    git(&source, &["update-index", "--refresh"])?;
+    let changed: Vec<_> = original.iter().map(|byte| byte.wrapping_add(1)).collect();
+    fs::write(&file, &changed)?;
+    fs::File::open(&file)?.set_times(FileTimes::new().set_modified(timestamp))?;
+    assert!(git(&source, &["status", "--porcelain"])?.is_empty());
+    let target = root.path().join("target");
+    let mut request = AddRequest::new(target.clone());
+    request.source = Some(source.clone());
+    request.branch = Branch::New("owned".into());
+    let error = add_worktree(&request).err().ok_or("changed source accepted")?;
+    assert_eq!(error.code(), "dirty_source");
+    assert!(!target.exists());
+    assert_eq!(fs::read(&file)?, changed);
     Ok(())
 }

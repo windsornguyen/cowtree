@@ -22,3 +22,19 @@ ctrlc = { version = "3.5", features = ["termination"] }
 
 [lints]
 workspace = true
+
+[target.'cfg(unix)'.dependencies]
+cowtree-workspace = { path = "../workspace" }
+cowtree-metadata = { path = "../metadata" }
+cowtree-process = { path = "../process" }
+
+[dev-dependencies]
+sha2 = "0.10"
+hex = "0.4"
+tempfile = "3"
+
+[features]
+fault-injection = ["cowtree-workspace/fault-injection", "cowtree-metadata/fault-injection"]
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.31.3", features = ["signal", "process"] }

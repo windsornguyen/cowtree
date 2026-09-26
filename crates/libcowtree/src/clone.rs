@@ -13,19 +13,13 @@ use std::{fs, path::Path};
 pub fn clone_file(source: &Path, target: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(source)
         .map_err(|error| Error::io(Operation::Inspect, source, error))?;
+    clone_regular(source, target, &metadata)
+}
+
+/// Reuse the caller's source inspection. The native primitive creates the target exclusively.
+pub(crate) fn clone_regular(source: &Path, target: &Path, metadata: &fs::Metadata) -> Result<()> {
     if !metadata.is_file() {
         return Err(Error::InvalidSource { path: source.to_path_buf() });
-    }
-    match fs::symlink_metadata(target) {
-        Ok(_) => {
-            return Err(Error::io(
-                Operation::Open,
-                target,
-                std::io::ErrorKind::AlreadyExists.into(),
-            ));
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(Error::io(Operation::Inspect, target, error)),
     }
     let file =
         platform::open_source(source).map_err(|error| Error::io(Operation::Open, source, error))?;

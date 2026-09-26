@@ -1,13 +1,15 @@
 # libcowtree
 
-The native engine shared by the Rust CLI and Python bindings. The filesystem
+The native engine used by the native CLI and managed workspace library. The filesystem
 owns block sharing during edits. This library owns admission, traversal,
 cloning, metadata preservation, and cleanup of the state it creates.
 
 ## Operations
 
 - `add_worktree` locks the repository, pins a source commit, reserves an absent
-  destination, registers it with Git, clones tracked files, and checks the index.
+  destination, registers it with Git, and verifies the result. Checkout mode
+  clones existing tracked files. Committed mode asks Git to populate the final
+  destination and applies the same ownership and cleanup rules.
 - `list_worktrees` and `remove_worktree` use the same repository lock. Removing
   a worktree preserves its branch.
 - `clone_file` requires a regular source and an absent target. No byte-copy
@@ -29,9 +31,10 @@ the unresolved cleanup. Cancellation uses the same path.
 | Refs, indexes, and worktree registrations | Git |
 | Standalone transaction and tree operations | This library |
 | Managed snapshot and publication records | `cowtree-metadata` |
-| Managed filesystem installation and recovery | Python coordinator, pending port |
+| Managed filesystem installation and recovery | `cowtree-workspace` |
 
-`creation.rs` defines the standalone transaction. `platform/` contains clone
+`creation.rs` defines one transaction for both source modes. Git execution is
+shared through [`crates/git`](../git/README.md). `platform/` contains clone
 primitives. `tree_scan.rs` and `tree_clone.rs` implement snapshot capture and
 materialization. `creation_tests.rs` injects failures only in test builds.
 

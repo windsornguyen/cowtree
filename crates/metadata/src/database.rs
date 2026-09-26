@@ -89,6 +89,15 @@ impl Store {
     pub fn sqlite_version(&self) -> String {
         rusqlite::version().to_owned()
     }
+    /// Locate immutable payloads for the native filesystem coordinator.
+    ///
+    /// The caller must retain selected objects through authority records or client pins
+    /// and verify their content identity before installing them.
+    #[must_use]
+    pub fn object_directory(&self) -> PathBuf {
+        self.root.join("objects")
+    }
+
     /// Read the capacity policy fixed when this authority was created.
     pub fn limits(&self) -> &Limits {
         &self.limits

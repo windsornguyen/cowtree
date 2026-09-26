@@ -5,5 +5,10 @@
 mod arguments;
 mod dispatch;
 mod output;
+mod version;
+#[cfg(unix)]
+mod workspace;
+#[cfg(unix)]
+mod workspace_arguments;
 
 pub use dispatch::run;

@@ -22,6 +22,18 @@ pub(crate) struct Arguments {
 
 #[derive(Subcommand)]
 pub(crate) enum Operation {
+    #[cfg(unix)]
+    Workspace(crate::workspace_arguments::Options),
+    #[cfg(unix)]
+    #[command(name = "__supervise", hide = true)]
+    Supervise {
+        /// Positive validation deadline in seconds.
+        #[arg(long)]
+        timeout: u64,
+        /// Child argument vector after --.
+        #[arg(last = true, required = true)]
+        command: Vec<OsString>,
+    },
     Add(Add),
     List {
         source: Option<PathBuf>,

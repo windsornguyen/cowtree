@@ -55,98 +55,20 @@ jobs:
         shell: bash
         env:
           HOLLYWOOD_COMMAND_ARG_4: ${{ format('{0}/.tools/atlas', github.workspace) }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
       - name: Install Rust
         run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
         shell: bash
         env:
           HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - name: Install Python test dependencies
-        run: uv sync --locked --group test
-        shell: bash
       - name: Check generated SQLite schema
-        run: uv run python scripts/schema.py check --atlas .tools/atlas
+        run: cargo run --locked -p xtask -- schema check --atlas .tools/atlas
         shell: bash
-      - name: Test declarative schema generation
-        run: uv run pytest -q tests/test_schema_generation.py
-        shell: bash
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install Rust
-        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
-        shell: bash
-        env:
-          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - name: Install Python
-        run: uv python install 3.10
-        shell: bash
-      - name: Install dependencies
-        run: uv sync --locked --group lint --group bench --group test
-        shell: bash
-      - name: Ruff lint
-        run: uv run ruff check .
-        shell: bash
-      - name: Ruff format
-        run: uv run ruff format --check .
-        shell: bash
-      - name: Ty typecheck
-        run: uv run ty check
-        shell: bash
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-        python-version:
-          - "3.10"
-          - "3.11"
-          - "3.12"
-          - "3.13"
-          - "3.14"
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install Rust
-        run: rustup toolchain install "$HOLLYWOOD_COMMAND_ARG_2" --profile minimal
-        shell: bash
-        env:
-          HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - name: Install Python
-        run: uv python install "$HOLLYWOOD_COMMAND_ARG_2"
-        shell: bash
-        env:
-          HOLLYWOOD_COMMAND_ARG_2: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: uv sync --locked --group test
-        shell: bash
-      - name: Verify selected Python
-        run: uv run python -c 'import os, sys; actual = f'"'"'{sys.version_info.major}.{sys.version_info.minor}'"'"'; print(sys.version); assert actual == os.environ['"'"'UV_PYTHON'"'"'], actual'
-        shell: bash
-      - name: Run tests
-        run: uv run pytest
+      - name: Test declarative schema admission
+        run: cargo test --locked -p xtask schema
         shell: bash
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - name: Install Rust
@@ -154,23 +76,15 @@ jobs:
         shell: bash
         env:
           HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - name: Install Python
-        run: uv python install 3.10
-        shell: bash
-      - name: Build package
-        run: uv build
+      - name: Build native executables
+        run: cargo build --locked --release -p cowtree-cli -p cowtree-metadata
         shell: bash
   filesystems:
     name: Native filesystem matrix
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       - name: Native filesystem matrix
         uses: ./.github/actions/ci/native-filesystems
   windows:
@@ -184,13 +98,6 @@ jobs:
         shell: bash
         env:
           HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-      - name: Install Python
-        run: uv python install 3.10
-        shell: bash
-      - name: Install test dependencies
-        run: uv sync --locked --no-default-groups --group test
-        shell: bash
       - name: Check ReFS isolation and NTFS refusal
         run: pwsh -NoProfile -File scripts/test_windows.ps1
         shell: bash
@@ -199,7 +106,6 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 15
     env:
-      UV_PYTHON: cpython-3.14-windows-aarch64-none
       RUSTUP_TOOLCHAIN: 1.97.1-aarch64-pc-windows-msvc
     steps:
       - uses: actions/checkout@v6
@@ -208,16 +114,6 @@ jobs:
         shell: bash
         env:
           HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
-      - name: Install native Python
-        run: uv python install cpython-3.14-windows-aarch64-none
-        shell: bash
-      - name: Install test dependencies
-        run: uv sync --locked --no-default-groups --group test
-        shell: bash
-      - name: Verify native ARM64 interpreter
-        run: uv run --no-sync python -c 'import sysconfig; actual = sysconfig.get_platform(); print(actual); assert actual == '"'"'win-arm64'"'"', actual'
-        shell: bash
       - name: Check Dev Drive isolation and NTFS refusal
         run: pwsh -NoProfile -File scripts/test_windows.ps1 -DevDrive
         shell: bash
@@ -232,16 +128,15 @@ jobs:
         shell: bash
         env:
           HOLLYWOOD_COMMAND_ARG_2: ${{ env.RUSTUP_TOOLCHAIN }}
-      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
           java-version: "17"
       - name: Check safety, witnesses, and fencing mutation
-        run: uv run --locked --no-default-groups python scripts/check_specs.py --cache "$HOLLYWOOD_COMMAND_ARG_6"
+        run: cargo run --locked -p xtask -- specs --cache "$HOLLYWOOD_COMMAND_ARG_7"
         shell: bash
         env:
-          HOLLYWOOD_COMMAND_ARG_6: ${{ format('{0}/cowtree-tla', runner.temp) }}
+          HOLLYWOOD_COMMAND_ARG_7: ${{ format('{0}/cowtree-tla', runner.temp) }}
       - name: Save checker evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

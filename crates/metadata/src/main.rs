@@ -3,12 +3,12 @@
 //! Start the line-delimited JSON metadata interface.
 
 mod json_cli;
-mod version;
+use cowtree_metadata::BuildVersion;
 
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
     if args.len() == 3 && args[1] == "--version" && args[2] == "--json" {
-        if let Err(error) = version::Version::current().write(std::io::stdout().lock()) {
+        if let Err(error) = BuildVersion::current().write(std::io::stdout().lock()) {
             eprintln!("{error}");
             return std::process::ExitCode::FAILURE;
         }

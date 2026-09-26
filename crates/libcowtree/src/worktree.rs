@@ -36,14 +36,6 @@ pub enum RequestIssue {
     InvalidDestination,
     #[error("branch must be a literal UTF-8 local name")]
     InvalidBranch,
-    #[error("source requires a parent")]
-    SourceParent,
-    #[error("branch modes are mutually exclusive")]
-    BranchConflict,
-    #[error("invalid source mode")]
-    SourceMode,
-    #[error("reason requires lock")]
-    ReasonWithoutLock,
     #[error("doctor requires an existing directory")]
     ProbeDirectory,
 }

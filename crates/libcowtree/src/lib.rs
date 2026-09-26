@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Windsor Nguyen
 
-//! Native filesystem operations shared by Cowtree's language interfaces.
+//! Standalone worktrees and native filesystem operations.
 //!
 //! The filesystem owns block sharing during edits. This library owns clone
 //! admission, metadata preservation, and cleanup of destinations it creates.

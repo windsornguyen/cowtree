@@ -6,7 +6,7 @@
 //! traversal order, create each parent once, then clone regular files or preserve
 //! link text. The caller owns the root, rollback, and final Git content check.
 
-use crate::{Error, FileMode, Operation, Result, TrackedFile, clone_file};
+use crate::{Error, FileMode, Operation, Result, TrackedFile, clone::clone_regular};
 use std::{
     collections::BTreeSet,
     fs,
@@ -42,21 +42,49 @@ pub fn populate_tracked(
     for parent in &parents {
         require_directory(&source.join(parent))?;
     }
-    for parent in parents {
+    create_parents(&target, parents, cancellation)?;
+    clone_entries(entries, |entry| {
         cancellation.check()?;
-        let path = target.join(parent);
-        fs::create_dir(&path)
-            .map_err(|error| Error::io(Operation::CreateDirectory, &path, error))?;
-    }
-    for entry in entries {
-        cancellation.check()?;
-        populate(&source, &target, entry)?;
-    }
+        populate(&source, &target, entry)
+    })?;
     cancellation.check()?;
     Ok(())
 }
 
-fn parents(entries: &[TrackedFile]) -> Result<BTreeSet<PathBuf>> {
+/// Join every clone worker before the caller may roll back its owned directory.
+fn clone_entries(
+    entries: &[TrackedFile],
+    copy: impl Fn(&TrackedFile) -> Result<()> + Sync,
+) -> Result<()> {
+    // Four workers won the APFS 512/8192-file sweep. More increased contention.
+    // See docs/native-profiling.rst. Recheck on a different clone backend.
+    let mut batches = entries.chunks(entries.len().div_ceil(4).max(1));
+    let Some(first) = batches.next() else {
+        return Ok(());
+    };
+    std::thread::scope(|scope| {
+        let mut workers = Vec::new();
+        let copy = &copy;
+        for batch in batches {
+            let worker = std::thread::Builder::new()
+                .name("cowtree-clone".into())
+                .spawn_scoped(scope, move || batch.iter().try_for_each(copy))
+                .map_err(Error::WorkerStart)?;
+            workers.push(worker);
+        }
+        let mut result = first.iter().try_for_each(copy);
+        for worker in workers {
+            let outcome = match worker.join() {
+                Ok(outcome) => outcome,
+                Err(panic) => std::panic::resume_unwind(panic),
+            };
+            result = result.and(outcome);
+        }
+        result
+    })
+}
+
+pub(crate) fn parents(entries: &[TrackedFile]) -> Result<BTreeSet<PathBuf>> {
     let mut paths = BTreeSet::new();
     let mut parents = BTreeSet::new();
     for entry in entries {
@@ -75,6 +103,20 @@ fn parents(entries: &[TrackedFile]) -> Result<BTreeSet<PathBuf>> {
         }
     }
     Ok(parents)
+}
+
+pub(crate) fn create_parents(
+    target: &Path,
+    parents: BTreeSet<PathBuf>,
+    cancellation: &crate::Cancellation,
+) -> Result<()> {
+    for parent in parents {
+        cancellation.check()?;
+        let path = target.join(parent);
+        fs::create_dir(&path)
+            .map_err(|error| Error::io(Operation::CreateDirectory, &path, error))?;
+    }
+    Ok(())
 }
 
 fn require_directory(path: &Path) -> Result<()> {
@@ -110,7 +152,7 @@ fn populate(source: &Path, target: &Path, entry: &TrackedFile) -> Result<()> {
             return Err(Error::ModeMismatch { path: source });
         }
     }
-    clone_file(&source, &target)
+    clone_regular(&source, &target, &metadata)
 }
 
 #[cfg(unix)]
@@ -127,5 +169,66 @@ fn symlink(link: &Path, target: &Path, metadata: &fs::Metadata) -> std::io::Resu
         symlink_dir(link, target)
     } else {
         symlink_file(link, target)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        sync::{Mutex, mpsc},
+        time::Duration,
+    };
+
+    #[test]
+    fn failed_population_joins_an_inflight_clone_before_returning()
+    -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let root = tempfile::tempdir()?;
+        if !crate::inspect_path(root.path())?.supported() {
+            return Ok(());
+        }
+        let source = root.path().join("source");
+        let target = root.path().join("target");
+        fs::create_dir(&source)?;
+        fs::create_dir(&target)?;
+        fs::write(source.join("blocked"), b"independent bytes")?;
+        let entries = [
+            TrackedFile::new("missing".into(), FileMode::Regular)?,
+            TrackedFile::new("blocked".into(), FileMode::Regular)?,
+        ];
+        let (entered, started) = mpsc::channel();
+        let (release, wait) = mpsc::channel();
+        let wait = Mutex::new(wait);
+        let (finished, result) = mpsc::channel();
+        std::thread::scope(|scope| -> std::result::Result<(), Box<dyn std::error::Error>> {
+            scope.spawn(|| {
+                let copied = clone_entries(&entries, |entry| {
+                    if entry.path() == Path::new("blocked") {
+                        entered.send(()).map_err(|error| channel_error(error.to_string()))?;
+                        wait.lock()
+                            .map_err(|error| channel_error(error.to_string()))?
+                            .recv_timeout(Duration::from_secs(5))
+                            .map_err(|error| channel_error(error.to_string()))?;
+                    }
+                    populate(&source, &target, entry)
+                });
+                let _ = finished.send(copied);
+            });
+            started.recv_timeout(Duration::from_secs(5))?;
+            let premature = result.recv_timeout(Duration::from_millis(50));
+            release.send(())?;
+            assert!(matches!(premature, Err(mpsc::RecvTimeoutError::Timeout)));
+            assert!(result.recv_timeout(Duration::from_secs(5))?.is_err());
+            assert_eq!(fs::read(target.join("blocked"))?, b"independent bytes");
+            Ok(())
+        })
+    }
+
+    fn channel_error(message: String) -> Error {
+        Error::io(
+            Operation::Clone,
+            Path::new("test synchronization"),
+            std::io::Error::other(message),
+        )
     }
 }

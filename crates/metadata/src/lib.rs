@@ -19,6 +19,9 @@ pub mod objects;
 mod publication;
 mod resolution;
 mod types;
+mod version;
+
+pub use version::Version as BuildVersion;
 
 pub use batch_types::{BatchCandidate, BatchReceipt, ResolutionInput};
 pub use database::Store;

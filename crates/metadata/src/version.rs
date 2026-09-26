@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 #[derive(Serialize)]
-pub(crate) struct Version {
+pub struct Version {
     /// Package release compiled into this executable.
     version: &'static str,
     /// Optional source identity supplied by the build, never inferred at runtime.
@@ -16,12 +16,12 @@ pub(crate) struct Version {
 
 impl Version {
     #[must_use]
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         Self { version: env!("CARGO_PKG_VERSION"), revision: option_env!("COWTREE_BUILD_REVISION") }
     }
 
     /// Write one JSON record, preserving serialization and output errors.
-    pub(crate) fn write(&self, mut output: impl Write) -> io::Result<()> {
+    pub fn write(&self, mut output: impl Write) -> io::Result<()> {
         serde_json::to_writer(&mut output, self).map_err(io::Error::other)?;
         output.write_all(b"\n")
     }

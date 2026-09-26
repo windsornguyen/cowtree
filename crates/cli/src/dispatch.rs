@@ -8,7 +8,6 @@ use crate::{
 };
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use cowtree::{PreparedAdd, WorktreeError, inspect_path, list_worktrees, remove_worktree};
-use serde::Serialize;
 use std::{
     ffi::OsString,
     io::{self, Write},
@@ -21,7 +20,8 @@ pub fn run() -> io::Result<ExitCode> {
     let json = arguments
         .iter()
         .take_while(|argument| *argument != "--")
-        .any(|argument| argument == "--json");
+        .any(|argument| argument == "--json")
+        || arguments.get(1).is_some_and(|argument| argument == "workspace");
     let options = match Arguments::try_parse_from(arguments) {
         Ok(options) => options,
         Err(error)
@@ -82,6 +82,13 @@ fn execute(options: Arguments) -> Result<u8, Failure> {
         return Ok(0);
     }
     match options.command {
+        #[cfg(unix)]
+        Some(Operation::Workspace(options)) => return Ok(crate::workspace::run(options)?),
+        #[cfg(unix)]
+        Some(Operation::Supervise { timeout, command }) => {
+            return cowtree_process::run(&command, timeout)
+                .map_err(|error| Failure::Output(io::Error::other(error)));
+        }
         Some(Operation::Add(arguments)) => {
             let request = arguments.request();
             let prepared = PreparedAdd::new(&request)?;
@@ -132,15 +139,7 @@ fn execute(options: Arguments) -> Result<u8, Failure> {
 }
 
 fn version(json: bool) -> io::Result<()> {
-    #[derive(Serialize)]
-    struct Version {
-        version: &'static str,
-        revision: Option<&'static str>,
-    }
-    let version = Version {
-        version: env!("CARGO_PKG_VERSION"),
-        revision: option_env!("COWTREE_BUILD_REVISION"),
-    };
+    let version = crate::version::Version::current();
     if json {
         output::write_json(&version, &mut io::stdout().lock())
     } else {

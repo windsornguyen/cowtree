@@ -121,3 +121,39 @@ fn atomic_editor_save_does_not_change_the_original() -> Result<(), Box<dyn StdEr
     assert_eq!(fs::read(&target)?, b"saved edit");
     Ok(())
 }
+
+#[test]
+fn competing_clones_preserve_the_winning_destination() -> Result<(), Box<dyn StdError>> {
+    let Some(directory) = native_directory()? else {
+        return Ok(());
+    };
+    let sources = [directory.path().join("first"), directory.path().join("second")];
+    fs::write(&sources[0], b"first source")?;
+    fs::write(&sources[1], b"second source")?;
+    let target = directory.path().join("target");
+    let barrier = std::sync::Barrier::new(2);
+    let outcomes = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            barrier.wait();
+            clone_file(&sources[0], &target)
+        });
+        let second = scope.spawn(|| {
+            barrier.wait();
+            clone_file(&sources[1], &target)
+        });
+        [first.join(), second.join()]
+    });
+    let mut winners = Vec::new();
+    for (index, outcome) in outcomes.into_iter().enumerate() {
+        match outcome.map_err(|_| "clone worker panicked")? {
+            Ok(()) => winners.push(index),
+            Err(Error::Io { source, .. }) if source.kind() == ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    assert_eq!(winners.len(), 1);
+    assert_eq!(fs::read(&target)?, fs::read(&sources[winners[0]])?);
+    assert_eq!(fs::read(&sources[0])?, b"first source");
+    assert_eq!(fs::read(&sources[1])?, b"second source");
+    Ok(())
+}

@@ -1,101 +1,46 @@
 // Copyright (c) 2026 Windsor Nguyen
 
-//! Git remains authoritative for refs, index contents, and worktree registration.
-//!
-//! Commands receive argument arrays and retain the caller's repository selection.
-//! A handle on the common lock serializes native and Python Cowtree clients.
+//! Standalone admission and Git worktree records.
 
 use crate::{
     FileMode, GitField, TrackedFile, Worktree, WorktreeError as Error, WorktreeResult as Result,
 };
+use cowtree_git::{Client, checked, decode_path};
 use std::{
     ffi::OsStr,
-    fs::File,
+    ops::Deref,
     path::{Path, PathBuf},
-    process::{Command, Output},
 };
 
-pub(crate) struct Git {
-    pub(crate) root: PathBuf,
-}
+pub(crate) struct Git(Client);
 
 pub(crate) struct Snapshot {
-    pub(crate) commit: String,
-    pub(crate) entries: Vec<TrackedFile>,
+    pub commit: String,
+    pub entries: Vec<TrackedFile>,
+}
+
+impl Deref for Git {
+    type Target = Client;
+    fn deref(&self) -> &Client {
+        &self.0
+    }
 }
 
 impl Git {
+    #[cfg(test)]
+    pub(crate) fn at(root: &Path) -> Self {
+        Self(Client::at(root))
+    }
     pub(crate) fn discover(source: Option<&Path>) -> Result<Self> {
-        let mut command = Command::new("git");
-        if let Some(source) = source {
-            command.current_dir(source);
-        }
-        let output = command
-            .args(["rev-parse", "--show-toplevel"])
-            .output()
-            .map_err(|error| Error::io(source.unwrap_or(Path::new(".")), error))?;
-        let root = decode_path(trim_newline(checked(output)?))?;
-        let root = root.canonicalize().map_err(|error| Error::io(&root, error))?;
-        Ok(Self { root })
+        Ok(Self(Client::discover(source)?))
+    }
+    pub(crate) fn select(&self, root: &Path) -> Self {
+        Self(self.0.select(root))
     }
 
-    pub(crate) fn command(&self) -> Command {
-        let mut command = Command::new("git");
-        command.arg("-C").arg(dunce::simplified(&self.root));
-        command
-    }
-
-    pub(crate) fn capture(&self, command: &mut Command) -> Result<Vec<u8>> {
-        let output = command.output().map_err(|error| Error::io(&self.root, error))?;
-        checked(output)
-    }
-
-    pub(crate) fn text(&self, command: &mut Command) -> Result<String> {
-        let bytes = trim_newline(self.capture(command)?);
-        String::from_utf8(bytes).map_err(|_| Error::GitResponse { field: GitField::Text })
-    }
-
-    pub(crate) fn head(&self) -> Result<String> {
-        self.text(self.command().args(["rev-parse", "HEAD"]))
-    }
-
-    pub(crate) fn lock(&self) -> Result<File> {
-        let bytes = self.capture(self.command().args([
-            "rev-parse",
-            "--path-format=absolute",
-            "--git-common-dir",
-        ]))?;
-        let path = decode_path(trim_newline(bytes))?.join("cowtree.lock");
-        let file = File::options()
-            .read(true)
-            .append(true)
-            .create(true)
-            .open(&path)
-            .map_err(|error| Error::io(&path, error))?;
-        fs4::FileExt::lock(&file).map_err(|error| Error::io(&path, error))?;
-        Ok(file)
-    }
-
-    pub(crate) fn status(&self) -> Result<Vec<u8>> {
-        let filemode = if cfg!(windows) { "core.filemode=false" } else { "core.filemode=true" };
-        self.capture(self.command().args([
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.ignorestat=false",
-            "-c",
-            filemode,
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=no",
-            "--ignore-submodules=none",
-        ]))
-    }
-
-    pub(crate) fn snapshot(&self) -> Result<Snapshot> {
+    pub(crate) fn require_full_checkout(&self) -> Result<()> {
         let sparse = self
-            .command()
+            .command()?
             .args(["config", "--bool", "core.sparseCheckout"])
             .output()
             .map_err(|error| Error::io(&self.root, error))?;
@@ -104,31 +49,76 @@ impl Git {
         } else if sparse.stdout == b"true\n" {
             return Err(Error::SparseCheckout);
         }
+        Ok(())
+    }
+
+    pub(crate) fn snapshot(&self) -> Result<Snapshot> {
+        self.require_full_checkout()?;
         let commit = self.head()?;
         let entries = self.entries(OsStr::new(&commit))?;
-        let flags = self.capture(self.command().args(["ls-files", "-v", "-z"]))?;
-        if flags.split(|byte| *byte == 0).any(|record| {
-            record.first().is_some_and(|flag| flag.is_ascii_lowercase() || *flag == b'S')
-        }) {
-            return Err(Error::DirtySource);
-        }
+        self.require_visible_index()?;
         if !self.status()?.is_empty() {
             return Err(Error::DirtySource);
         }
         Ok(Snapshot { commit, entries })
     }
 
+    pub(crate) fn require_visible_index(&self) -> Result<()> {
+        let flags = self.capture(self.command()?.args(["ls-files", "-v", "-z"]))?;
+        if flags.split(|byte| *byte == 0).any(|record| {
+            record.first().is_some_and(|flag| flag.is_ascii_lowercase() || *flag == b'S')
+        }) {
+            return Err(Error::DirtySource);
+        }
+        Ok(())
+    }
+
+    /// Load pinned entries or clear the index.
+    pub(crate) fn read_tree(&self, commit: Option<&str>) -> Result<()> {
+        let mut command = self.command()?;
+        command.args(["-c", "core.fsmonitor=false", "-c", "core.ignorestat=false", "read-tree"]);
+        command.arg(commit.unwrap_or("--empty"));
+        self.capture(&mut command)?;
+        Ok(())
+    }
+
+    /// Materialize each tracked name without replacing aliases.
+    pub(crate) fn checkout(&self, commit: &str) -> Result<()> {
+        self.read_tree(Some(commit))?;
+        self.capture(self.command()?.args([
+            "-c",
+            "core.symlinks=true",
+            "checkout-index",
+            "--all",
+            "--index",
+        ]))?;
+        let absent = "0".repeat(commit.len());
+        self.capture(self.command()?.args([
+            "hook",
+            "run",
+            "--ignore-missing",
+            "post-checkout",
+            "--",
+            &absent,
+            commit,
+            "1",
+        ]))?;
+        Ok(())
+    }
+
     pub(crate) fn resolve(&self, revision: &OsStr) -> Result<String> {
         let mut selected = revision.to_os_string();
         selected.push("^{commit}");
-        self.text(self.command().args(["rev-parse", "--verify", "--end-of-options"]).arg(selected))
+        Ok(self.text(
+            self.command()?.args(["rev-parse", "--verify", "--end-of-options"]).arg(selected),
+        )?)
     }
 
     pub(crate) fn has_branch(&self, branch: &OsStr) -> Result<bool> {
         let mut name = std::ffi::OsString::from("refs/heads/");
         name.push(branch);
         let output = self
-            .command()
+            .command()?
             .args(["show-ref", "--verify", "--quiet"])
             .arg(name)
             .output()
@@ -136,17 +126,17 @@ impl Git {
         match output.status.code() {
             Some(0) => Ok(true),
             Some(1) => Ok(false),
-            _ => checked(output).map(|_| true),
+            _ => Ok(checked(output).map(|_| true)?),
         }
     }
 
     pub(crate) fn entries(&self, revision: &OsStr) -> Result<Vec<TrackedFile>> {
-        let data = self.capture(self.command().args(["ls-tree", "-r", "-z"]).arg(revision))?;
+        let data = self.capture(self.command()?.args(["ls-tree", "-r", "-z"]).arg(revision))?;
         data.split(|byte| *byte == 0).filter(|record| !record.is_empty()).map(parse_entry).collect()
     }
 
     pub(crate) fn worktrees(&self) -> Result<Vec<Worktree>> {
-        let data = self.capture(self.command().args(["worktree", "list", "--porcelain", "-z"]))?;
+        let data = self.capture(self.command()?.args(["worktree", "list", "--porcelain", "-z"]))?;
         let mut records = Vec::new();
         let mut fields = Vec::new();
         for field in data.split(|byte| *byte == 0) {
@@ -178,37 +168,6 @@ impl Git {
             }
         }
         Ok(None)
-    }
-}
-
-fn checked(output: Output) -> Result<Vec<u8>> {
-    if output.status.success() {
-        return Ok(output.stdout);
-    }
-    Err(Error::Git {
-        status: output.status,
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-    })
-}
-
-fn trim_newline(mut bytes: Vec<u8>) -> Vec<u8> {
-    if bytes.last() == Some(&b'\n') {
-        bytes.pop();
-    }
-    bytes
-}
-
-pub(crate) fn decode_path(bytes: Vec<u8>) -> Result<PathBuf> {
-    #[cfg(unix)]
-    {
-        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
-        Ok(OsString::from_vec(bytes).into())
-    }
-    #[cfg(windows)]
-    {
-        String::from_utf8(bytes)
-            .map(PathBuf::from)
-            .map_err(|_| Error::GitResponse { field: GitField::PathEncoding })
     }
 }
 

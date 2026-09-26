@@ -27,7 +27,7 @@ pub fn add_worktree(request: &AddRequest) -> Result<Worktree> {
 pub struct PreparedAdd {
     repository: Git,
     request: AddRequest,
-    _lock: fs::File,
+    _lock: std::sync::Arc<fs::File>,
 }
 
 impl PreparedAdd {
@@ -41,9 +41,6 @@ impl PreparedAdd {
 
     pub fn run(self) -> Result<Worktree> {
         self.request.cancellation.check()?;
-        if self.request.source_mode == SourceMode::Committed {
-            return committed(&self.repository, &self.request);
-        }
         create(&self.repository, &self.request)
     }
 }
@@ -72,10 +69,26 @@ fn create(repository: &Git, request: &AddRequest) -> Result<Worktree> {
 
 fn prepare(repository: &Git, request: &AddRequest) -> Result<(PathBuf, Snapshot)> {
     let target = resolve_target(&request.path)?;
-    let snapshot = repository.snapshot()?;
-    if repository.resolve(&request.revision)? != snapshot.commit {
-        return Err(Error::HeadMismatch);
-    }
+    let snapshot = match request.source_mode {
+        SourceMode::Checkout => {
+            let snapshot = repository.snapshot()?;
+            if request.revision != "HEAD"
+                && repository.resolve(&request.revision)? != snapshot.commit
+            {
+                return Err(Error::HeadMismatch);
+            }
+            snapshot
+        }
+        SourceMode::Committed => {
+            let revision = match &request.branch {
+                Branch::Existing(branch) => qualified(branch),
+                _ => request.revision.clone(),
+            };
+            let commit = repository.resolve(&revision)?;
+            let entries = repository.entries(OsStr::new(&commit))?;
+            Snapshot { commit, entries }
+        }
+    };
     check_branch(repository, request, &snapshot)?;
     Ok((target, snapshot))
 }
@@ -112,7 +125,7 @@ fn check_branch(repository: &Git, request: &AddRequest, snapshot: &Snapshot) -> 
         Branch::New(name) | Branch::Existing(name) => name,
     };
     let checked = repository
-        .capture(repository.command().args(["check-ref-format", "--branch"]).arg(branch))?;
+        .capture(repository.command()?.args(["check-ref-format", "--branch"]).arg(branch))?;
     let literal =
         branch.to_str().ok_or(Error::InvalidRequest { reason: RequestIssue::InvalidBranch })?;
     if checked != format!("{literal}\n").as_bytes() {
@@ -205,25 +218,35 @@ impl<'a> Creation<'a> {
         self.register()?;
         #[cfg(test)]
         self.checkpoint(Phase::BeforeCopy)?;
-        populate_tracked(
-            &self.repository.root,
-            &self.target,
-            &self.snapshot.entries,
-            &self.request.cancellation,
-        )?;
-        self.verify()?;
+        match self.request.source_mode {
+            SourceMode::Checkout => populate_tracked(
+                &self.repository.root,
+                &self.target,
+                &self.snapshot.entries,
+                &self.request.cancellation,
+            )?,
+            SourceMode::Committed => {
+                crate::populate::create_parents(
+                    &self.target,
+                    crate::populate::parents(&self.snapshot.entries)?,
+                    &self.request.cancellation,
+                )?;
+                self.repository.select(&self.target).checkout(&self.snapshot.commit)?;
+            }
+        }
+        let mut tree = self.verify()?;
         self.request.cancellation.check()?;
         if self.request.lock == Lock::Release {
             self.repository.capture(
                 self.repository
-                    .command()
+                    .command()?
                     .args(["worktree", "unlock"])
                     .arg(dunce::simplified(&self.target)),
             )?;
+            tree.locked = false;
+            tree.reason = None;
         }
-        self.repository
-            .find_worktree(&self.target)?
-            .ok_or_else(|| Error::WorktreeMissing { path: self.target.clone() })
+        Ok(tree)
     }
 
     fn reserve(&mut self) -> Result<()> {
@@ -263,7 +286,7 @@ impl<'a> Creation<'a> {
             let absent = "0".repeat(self.snapshot.commit.len());
             self.repository.capture(
                 self.repository
-                    .command()
+                    .command()?
                     .arg("update-ref")
                     .arg(qualified(branch))
                     .arg(&self.snapshot.commit)
@@ -273,7 +296,7 @@ impl<'a> Creation<'a> {
             #[cfg(test)]
             self.checkpoint(Phase::BranchCreated)?;
         }
-        let mut command = self.repository.command();
+        let mut command = self.repository.command()?;
         command.args(["worktree", "add", "--no-checkout", "--lock"]);
         if let Lock::Retain { reason: Some(reason) } = &self.request.lock {
             command.arg("--reason").arg(reason);
@@ -293,22 +316,37 @@ impl<'a> Creation<'a> {
         Ok(())
     }
 
-    fn verify(&self) -> Result<()> {
-        let target = Git { root: self.target.clone() };
-        target.capture(
-            target
-                .command()
-                .args(["-c", "core.fsmonitor=false", "-c", "core.ignorestat=false", "read-tree"])
-                .arg(&self.snapshot.commit),
-        )?;
-        if self.repository.head()? != self.snapshot.commit || target.head()? != self.snapshot.commit
-        {
+    fn verify(&self) -> Result<Worktree> {
+        let target = self.repository.select(&self.target);
+        match self.request.source_mode {
+            SourceMode::Checkout => {
+                target.read_tree(Some(&self.snapshot.commit))?;
+                if self.repository.head()? != self.snapshot.commit {
+                    return Err(Error::HeadMismatch);
+                }
+            }
+            SourceMode::Committed => target.require_full_checkout()?,
+        }
+        let tree = self
+            .repository
+            .find_worktree(&self.target)?
+            .ok_or_else(|| Error::WorktreeMissing { path: self.target.clone() })?;
+        if tree.head.as_deref() != Some(self.snapshot.commit.as_str()) {
             return Err(Error::HeadMismatch);
+        }
+        if self.request.source_mode == SourceMode::Committed {
+            target.require_visible_index()?;
+            if !target.status()?.is_empty() {
+                return Err(Error::DirtySource);
+            }
+            // Hooks may leave false-clean stat records.
+            target.read_tree(None)?;
+            target.read_tree(Some(&self.snapshot.commit))?;
         }
         if !target.status()?.is_empty() {
             return Err(Error::DirtySource);
         }
-        Ok(())
+        Ok(tree)
     }
 
     fn rollback(&mut self) -> Result<()> {
@@ -318,7 +356,7 @@ impl<'a> Creation<'a> {
                 self.checkpoint(Phase::BeforeRemove)?;
                 self.repository.capture(
                     self.repository
-                        .command()
+                        .command()?
                         .args(["worktree", "remove", "--force", "--force"])
                         .arg(dunce::simplified(&self.target)),
                 )?;
@@ -338,7 +376,7 @@ impl<'a> Creation<'a> {
                 self.checkpoint(Phase::BeforeDeleteRef)?;
                 self.repository.capture(
                     self.repository
-                        .command()
+                        .command()?
                         .args(["update-ref", "-d"])
                         .arg(qualified(branch))
                         .arg(&self.snapshot.commit),
@@ -352,62 +390,6 @@ impl<'a> Creation<'a> {
     }
 }
 
-fn committed(repository: &Git, request: &AddRequest) -> Result<Worktree> {
-    let revision = match &request.branch {
-        Branch::Existing(branch) => qualified(branch),
-        _ => request.revision.clone(),
-    };
-    let commit = repository.resolve(&revision)?;
-    repository.entries(OsStr::new(&commit))?;
-    let parent = repository
-        .root
-        .parent()
-        .ok_or(Error::InvalidRequest { reason: RequestIssue::SourceParent })?;
-    let directory = tempfile::Builder::new()
-        .prefix(".cowtree-seed-")
-        .tempdir_in(parent)
-        .map_err(|error| Error::io(parent, error))?;
-    let root = directory.keep();
-    let source = root.join("tree");
-    let registered = repository.capture(
-        repository
-            .command()
-            .args(["worktree", "add", "--detach", "--lock", "--"])
-            .arg(dunce::simplified(&source))
-            .arg(&commit),
-    );
-    let result = registered.and_then(|_| {
-        let mut pinned = request.clone();
-        pinned.path =
-            std::path::absolute(&request.path).map_err(|error| Error::io(&request.path, error))?;
-        pinned.revision = commit.into();
-        create(&Git { root: source.clone() }, &pinned)
-    });
-    let cleanup = remove_seed(repository, &root, &source);
-    match (result, cleanup) {
-        (result, Ok(())) => result,
-        (Ok(_), Err(source)) => Err(Error::SeedCleanup { path: root, source: Box::new(source) }),
-        (Err(original), Err(cleanup)) => Err(Error::Cleanup {
-            path: root,
-            branch: request.branch.clone(),
-            original: Box::new(original),
-            cleanup: Box::new(cleanup),
-        }),
-    }
-}
-
 #[cfg(test)]
 #[path = "creation_tests.rs"]
 mod tests;
-
-fn remove_seed(repository: &Git, root: &Path, source: &Path) -> Result<()> {
-    if repository.find_worktree(source)?.is_some() {
-        repository.capture(
-            repository
-                .command()
-                .args(["worktree", "remove", "--force", "--force", "--"])
-                .arg(dunce::simplified(source)),
-        )?;
-    }
-    fs::remove_dir_all(root).map_err(|error| Error::io(root, error))
-}

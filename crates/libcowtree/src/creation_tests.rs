@@ -10,18 +10,18 @@ type TestResult = std::result::Result<(), Box<dyn StdError>>;
 fn repository(parent: &Path) -> Result<Git> {
     let root = parent.join("repository");
     fs::create_dir(&root).map_err(|error| Error::io(&root, error))?;
-    let git = Git { root };
+    let git = Git::at(&root);
     for arguments in [
         vec!["init", "-q", "-b", "source"],
         vec!["config", "user.name", "Cowtree test"],
         vec!["config", "user.email", "test@example.invalid"],
         vec!["config", "commit.gpgsign", "false"],
     ] {
-        git.capture(git.command().args(arguments))?;
+        git.capture(git.command()?.args(arguments))?;
     }
     fs::write(git.root.join("file"), b"original\n").map_err(|error| Error::io(&git.root, error))?;
-    git.capture(git.command().args(["add", "file"]))?;
-    git.capture(git.command().args(["commit", "-qm", "fixture"]))?;
+    git.capture(git.command()?.args(["add", "file"]))?;
+    git.capture(git.command()?.args(["commit", "-qm", "fixture"]))?;
     Ok(git)
 }
 
@@ -41,7 +41,7 @@ fn injected(message: &'static str) -> Error {
 }
 
 fn has_branch(git: &Git, name: &str) -> Result<bool> {
-    let references = git.text(git.command().args(["for-each-ref", "--format=%(refname)"]))?;
+    let references = git.text(git.command()?.args(["for-each-ref", "--format=%(refname)"]))?;
     Ok(references.lines().any(|reference| reference == format!("refs/heads/{name}")))
 }
 
@@ -54,10 +54,16 @@ fn failed_creation_removes_only_owned_state() -> TestResult {
     let git = repository(root.path())?;
     fs::write(root.path().join("sentinel"), b"caller data")?;
     for phase in [Phase::BeforeRegister, Phase::BranchCreated, Phase::BeforeCopy] {
-        for locked in [false, true] {
+        for (locked, source_mode) in [
+            (false, SourceMode::Checkout),
+            (true, SourceMode::Checkout),
+            (false, SourceMode::Committed),
+            (true, SourceMode::Committed),
+        ] {
             for name in ["target", "cafe\u{301}"] {
                 let mut request = AddRequest::new(root.path().join("owned/nested").join(name));
                 request.branch = Branch::New("owned".into());
+                request.source_mode = source_mode;
                 if locked {
                     request.lock = Lock::Retain { reason: None };
                 }
@@ -126,7 +132,12 @@ fn source_changes_cannot_publish_different_contents_or_head() -> TestResult {
         let hook = |phase| {
             if phase == Phase::BeforeCopy {
                 if advance_head {
-                    git.capture(git.command().args(["commit", "--allow-empty", "-qm", "advance"]))?;
+                    git.capture(git.command()?.args([
+                        "commit",
+                        "--allow-empty",
+                        "-qm",
+                        "advance",
+                    ]))?;
                 } else {
                     fs::write(git.root.join("file"), b"changed during clone\n")
                         .map_err(|error| Error::io(&git.root, error))?;
@@ -157,7 +168,7 @@ fn pinned_tree_ignores_new_index_entries_without_losing_them() -> TestResult {
         if phase == Phase::BeforeCopy {
             fs::write(git.root.join("new"), b"staged during clone")
                 .map_err(|error| Error::io(&git.root, error))?;
-            git.capture(git.command().args(["add", "new"]))?;
+            git.capture(git.command()?.args(["add", "new"]))?;
         }
         Ok(())
     };
@@ -165,8 +176,8 @@ fn pinned_tree_ignores_new_index_entries_without_losing_them() -> TestResult {
     creation.hook = Some(&hook);
     let tree = creation.execute()?;
     assert!(!tree.path.join("new").exists());
-    assert_eq!(git.text(git.command().args(["diff", "--cached", "--name-only"]))?, "new");
-    assert!(Git { root: tree.path }.status()?.is_empty());
+    assert_eq!(git.text(git.command()?.args(["diff", "--cached", "--name-only"]))?, "new");
+    assert!(git.select(&tree.path).status()?.is_empty());
     Ok(())
 }
 
@@ -179,18 +190,18 @@ fn rollback_preserves_refs_moved_by_other_writers() -> TestResult {
         }
         let git = repository(root.path())?;
         let earlier = git.head()?;
-        git.capture(git.command().args(["commit", "--allow-empty", "-qm", "advance"]))?;
+        git.capture(git.command()?.args(["commit", "--allow-empty", "-qm", "advance"]))?;
         let current = git.head()?;
         let mut request = AddRequest::new(root.path().join("target"));
         request.branch = if existing {
-            git.capture(git.command().args(["branch", "agent"]))?;
+            git.capture(git.command()?.args(["branch", "agent"]))?;
             Branch::Existing("agent".into())
         } else {
             Branch::New("agent".into())
         };
         let hook = |phase| {
             if phase == Phase::BeforeCopy {
-                git.capture(git.command().args([
+                git.capture(git.command()?.args([
                     "update-ref",
                     "refs/heads/agent",
                     &earlier,

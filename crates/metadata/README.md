@@ -3,7 +3,7 @@
 `cowtree-metadata` is a Rust library and JSON command interface for a single-host
 workspace metadata authority. It implements durable snapshots, fenced path
 reservations, logical leaf edits, publication receipts, and explicit retention.
-The Python managed workspace owns physical installation, Git projection, and
+The Rust managed workspace owns physical installation, Git projection, and
 checked publication. This crate owns the SQLite state and immutable source objects;
 activation updates its logical view.
 
@@ -99,7 +99,7 @@ Prerelease stores must match the current declaration bundled with the executable
 Opening an incompatible schema fails without schema or data migration. The
 [declarative workflow](../../docs/schema.rst) generates SQL and reviewable diffs;
 it does not upgrade live stores. Physical installation records remain owned by
-the Python workspace; this schema has no filesystem bindings.
+the workspace library; this schema has no filesystem bindings.
 
 Failures use `database_busy` with `retry_same_request` only for SQLite BUSY/LOCKED.
 A tip change requires `reprepare`; a stale origin requires `resolve_conflict`.

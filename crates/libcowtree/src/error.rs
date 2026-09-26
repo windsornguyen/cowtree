@@ -19,6 +19,8 @@ pub enum Operation {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("cannot start clone worker: {0}")]
+    WorkerStart(#[source] io::Error),
     #[error("operation cancelled")]
     Cancelled,
     #[error("source is not a regular file: {path}")]
@@ -57,6 +59,7 @@ impl Error {
     #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
+            Self::WorkerStart(_) => "command_failed",
             Self::Cancelled => "cancelled",
             Self::InvalidSource { .. }
             | Self::InvalidTarget { .. }

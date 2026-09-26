@@ -16,7 +16,7 @@ pub fn remove_worktree(path: &Path, source: Option<&Path>, force: bool) -> Resul
     let path = std::path::absolute(path).map_err(|error| Error::io(path, error))?;
     let repository = Git::discover(source)?;
     let _lock = repository.lock()?;
-    let mut command = repository.command();
+    let mut command = repository.command()?;
     command.args(["worktree", "remove"]);
     if force {
         command.arg("--force");

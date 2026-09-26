@@ -2,14 +2,14 @@
 
 //! Worktree failures identify the violated contract and retain native causes.
 
-use std::{io, path::PathBuf, process::ExitStatus};
+use std::{io, path::PathBuf};
 
 pub type WorktreeResult<T> = std::result::Result<T, WorktreeError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorktreeError {
-    #[error("Git failed with {status}: {stderr}")]
-    Git { status: ExitStatus, stderr: String },
+    #[error(transparent)]
+    Git(#[from] cowtree_git::Error),
     #[error("filesystem operation failed at {path}: {source}")]
     Io { path: PathBuf, source: io::Error },
     #[error("invalid Git response for {field:?}")]
@@ -36,8 +36,6 @@ pub enum WorktreeError {
     ProbeFailed { invariant: ProbeInvariant },
     #[error("created worktree is not registered: {path}")]
     WorktreeMissing { path: PathBuf },
-    #[error("private seed cleanup failed at {path}. Destination may already be complete: {source}")]
-    SeedCleanup { path: PathBuf, source: Box<Self> },
     #[error(transparent)]
     Native(#[from] crate::Error),
     #[error(
@@ -48,8 +46,6 @@ pub enum WorktreeError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitField {
-    Text,
-    PathEncoding,
     TreeEntry,
     TreeMode,
     WorktreeKey,
@@ -86,9 +82,7 @@ impl WorktreeError {
             | Self::BranchExists { .. }
             | Self::BranchMissing { .. } => "invalid_arguments",
             Self::WorktreeMissing { .. } => "worktree_not_found",
-            Self::Cleanup { .. }
-            | Self::SeedCleanup { .. }
-            | Self::Native(crate::Error::Cleanup { .. }) => "cleanup_failed",
+            Self::Cleanup { .. } | Self::Native(crate::Error::Cleanup { .. }) => "cleanup_failed",
             Self::Native(crate::Error::Io { source, .. })
                 if source.kind() == io::ErrorKind::Unsupported =>
             {
