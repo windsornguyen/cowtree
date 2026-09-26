@@ -1,6 +1,13 @@
 Warm build cache qualification
 ==============================
 
+.. note::
+
+   Benchmark commands and receipts below describe the preceding implementation.
+   Their harnesses remain in Git history. The native runtime is tested with
+   ``cargo test --workspace --all-features``. Use ``benchmarks/README.rst`` for
+   the native creation benchmark. Earlier timings do not qualify this refactor.
+
 The fixture builds two C translation units and an executable with ``make`` and
 ``cc``. Its ``build/`` directory is an explicit derived-cache prefix. After the
 source checkout has been built, an ordinary Git worktree and a Cowtree fork are

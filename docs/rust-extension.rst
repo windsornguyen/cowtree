@@ -1,100 +1,92 @@
 Native engine
 =============
 
-An agent changes one file in a checkout containing thousands. The filesystem
-allocates private storage for that write. The other worktrees keep their original
-bytes. Cowtree does not run a watcher or rewrite a private block map on each save.
+Cowtree runs as a Rust executable. It calls Git for refs, indexes, checkout
+conversions, and worktree registration. The filesystem shares unchanged file
+blocks and isolates later writes. Ordinary edits do not run a Cowtree watcher
+or create a checkpoint.
 
-Native clone APIs establish that sharing. Ordinary writes, truncation, atomic
-saves, and deletion then use the filesystem's own copy-on-write rules. This does
-not create a Cowtree checkpoint. Checkpointing remains an explicit managed
-operation, and file durability still depends on the caller's writes and syncs.
+The CLI and Rust APIs use the same native operations. Managed workflows use
+one in-process SQLite connection per workspace session. A separate native
+supervisor bounds validation commands and retains their ownership lock if
+the coordinating process exits.
 
-Why Rust
---------
+Ownership
+---------
 
-The kernel handles sharing for one file. Cowtree must still validate a repository,
-walk many paths, clone each file, preserve metadata, build the index, and undo
-owned changes if any step fails. ``libcowtree`` owns that complete standalone
-operation, so its Rust CLI and Python bindings cannot drift into different rules.
+.. list-table:: Crates
+   :header-rows: 1
 
-Rust also owns snapshot traversal, hashing, policy checks, and materialization.
-The library does not reimplement Git or the filesystem. Git owns refs, indexes,
-and worktree registration. The kernel owns shared blocks and independent writes.
+   * - Directory
+     - Responsibility
+   * - ``crates/libcowtree``
+     - Native cloning, tree capture, standalone Git worktrees, cancellation.
+   * - ``crates/git``
+     - Synchronous Git execution, command context, pipes, and explicit lock inheritance.
+   * - ``crates/workspace``
+     - Managed imports, warm forks, checkpoints, publication, recovery, collection.
+   * - ``crates/metadata``
+     - SQLite authority, fenced reservations, immutable objects, publication receipts.
+   * - ``crates/process``
+     - Validation deadlines, log limits, process groups, inherited locks.
+   * - ``crates/cli``
+     - Argument parsing and JSON output for ``cowtree`` and ``git-cowtree``.
+   * - ``crates/xtask``
+     - Development-only schema generation and protocol-model checking.
 
-Interfaces
-----------
+Each library has an index-only ``lib.rs``. Named modules own behavior. Rust
+errors retain their filesystem, process, Git, or authority cause until the CLI
+formats a diagnostic. Python and PyO3 are not part of the build or runtime.
 
-``crates/libcowtree``
-    Required native engine. Typed requests select source, branch, and lock
-    policies. Errors retain the failed operation and operating-system cause.
-``crates/cli``
-    Native ``cowtree`` and ``git-cowtree`` executables for standalone commands.
-    Neither embeds Python nor starts a Python process.
-``crates/cowtree-python``
-    PyO3 binding to the same engine, with the stable CPython 3.10 ABI.
-    Long operations release Python's interpreter lock. Creation checks Python
-    signals at cancellation points before returning or rolling back.
-``src/cowtree/core.py`` and ``src/cowtree/trees.py``
-    Typed Python records and native error translation. A missing extension is
-    an installation failure, not a request to select another implementation.
+Committed standalone creation checks out directly into its final destination.
+Checkout-based creation uses CoW clones of existing files. Both modes share
+one ownership and rollback transaction. Managed capture keeps one workspace
+session across its phases. Checkpoint publication has one owner, while recovery
+verifies persisted images before completing their journaled transitions.
 
-Managed publication and crash recovery still have a Python coordinator under
-``src/cowtree`` and a Rust SQLite authority in ``crates/metadata``.
-The native CLI does not expose ``workspace`` commands yet. Use the Python
-compatibility command for them. Moving that coordinator into ``libcowtree`` is
-remaining work, not an optional acceleration mode.
+The managed store retains the executable path recorded at initialization as
+provenance. Validation uses the current caller's explicit supervisor executable.
+The CLI supplies its own path. It does not launch a formerly configured metadata
+service or interpreter when reopening an existing store.
 
-Build and test
---------------
+Build and verify
+----------------
 
 From the repository root::
 
     cargo build --locked --release -p cowtree-cli
-    ./target/release/cowtree doctor .
-    cargo test -p libcowtree
-    uv sync --group dev
-    uv run pytest -q
-    uv build
+    cargo fmt --all --check
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    cargo test --locked --workspace --all-targets --all-features
+    cargo doc --locked --workspace --no-deps
 
-Run the existing command-contract tests against the native executable::
+Standalone native cloning supports macOS, Linux, and Windows on qualifying
+filesystems. Managed filesystem ownership and recovery support macOS and Linux.
+The managed Windows port remains separate work.
 
-    COWTREE_TEST_BINARY="$PWD/target/release/cowtree" uv run pytest -q \
-        tests/test_cli.py tests/test_cli_json.py \
-        tests/test_existing_branch.py tests/test_committed_ref.py
+Performance
+-----------
 
-Hatch builds the Python package and strips inline tests from release artifacts.
-Maturin compiles the extension. Editable installs retain the source package.
-Source archives explicitly include build inputs and exclude local binaries.
+Measure complete creation, including startup, admission, Git calls, cloning,
+and content verification::
 
-Performance and qualification
------------------------------
+    cargo run --release -p cowtree-cli --example benchmark -- \
+        --binary target/release/cowtree --files 8192 --trials 5 \
+        --output /tmp/cowtree-benchmark.json
 
-Use the same fixture for Git, Python bindings, and the native executable::
+The benchmark alternates Git and Cowtree, checks every destination's bytes and
+Git status, and removes only its owned worktrees. It reports raw wall times.
+Logical fixture bytes are not physical allocation measurements.
 
-    uv run python benchmarks/native.py --binary target/release/cowtree \
-        --files 512 --worktrees 4 --trials 3 --output /tmp/cowtree-native.json
+Add ``--source-mode committed`` to measure direct committed materialization.
+The default ``--source-mode checkout`` measures CoW cloning of the existing
+checkout. Compare each mode with Git on the same fixture and build.
 
-The harness rotates execution order and verifies every destination with Git.
-Creation time includes validation and registration, not only the clone syscall.
-Space savings do not imply lower latency. Git subprocesses and filesystem
-metadata can dominate even after the Python per-file loop is removed.
+Standalone population creates each parent once and uses at most four clone
+workers. Every worker finishes before success or rollback can proceed.
+Cancellation is a shared atomic request checked between files. Native clone
+primitives create destinations exclusively, so an existence probe is unnecessary.
+The opened source descriptor is still validated before cloning.
 
-The `native qualification run at dfd1dda
-<https://github.com/windsornguyen/cowtree/actions/runs/35514459984>`_ passes the
-Linux filesystem matrix and Python 3.10-3.14 tests on Linux and macOS. On each
-Windows architecture, it passes 23 Python-boundary tests, 18 Rust engine tests,
-and 12 native-executable tests. The Windows hosts are x64 Server 2025/ReFS and
-ARM64 Windows 11/Dev Drive.
-
-Those Windows results qualify standalone commands. They do not establish
-managed-workspace ownership, process supervision, or durability on Windows.
-The managed coordinator remains POSIX-only until that separate port is qualified.
-
-References
-----------
-
-* `Apple clonefile contract <https://github.com/apple-oss-distributions/xnu/blob/main/bsd/man/man2/clonefile.2>`_
-* `PyO3 packaging <https://pyo3.rs/v0.29.0/building-and-distribution.html>`_
-* `PyO3 signal handling <https://pyo3.rs/v0.29.0/faq.html#ctrl-c-doesnt-do-anything-while-my-rust-code-is-executing>`_
-* `Hatch build hooks <https://hatch.pypa.io/latest/plugins/build-hook/reference/>`_
+See `native profiling <native-profiling.rst>`_ for debugger and syscall evidence.
+Space savings, creation latency, and compiler cache reuse are separate results.

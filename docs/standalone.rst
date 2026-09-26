@@ -42,27 +42,33 @@ An omitted reason remains ``None`` in the returned metadata.
 Use ``add --branch EXISTING_BRANCH PATH`` to attach an unused local branch
 instead of creating one. It is mutually exclusive with ``-b`` and ``--detach``.
 The branch must name the source commit. Git rejects a branch already checked out
-elsewhere. The Python equivalent is ``WorktreeAddRequest(existing_branch=...)``.
+elsewhere. The Rust equivalent is ``Branch::Existing``.
 Neither failed creation nor removal deletes an existing branch. Index creation
 never resets its reference, including when an external writer moves it.
 
 Use ``add --committed PATH REF`` to fork a committed ref even when the caller's
 checkout is dirty or at a different commit. With ``--branch``, that branch's tip
-selects the commit. Omit REF. The Python request uses
-``source_mode=SourceMode.COMMIT`` from ``cowtree.types``. The default remains
-``SourceMode.CHECKOUT`` and preserves the clean-source requirement.
+selects the commit. Omit REF. The Rust request uses
+``SourceMode::Committed``. The default remains
+``SourceMode::Checkout`` and preserves the clean-source requirement.
 
-Committed mode resolves the ref once, materializes a private Git checkout, and
-clones its files through native CoW. It never stashes or resets the caller's
-working files or index. Git applies checkout conversions in the private seed.
-The seed is removed before success, so no extra checked-out payload is retained.
-This mode pays Git checkout cost and does not provide warm-cache inheritance.
-Unsupported clone storage still fails rather than copying into the destination.
-If seed cleanup fails, inspect the named directory and ``git worktree list``:
-the destination may already be complete. Unhandled process crashes can leave the
-locked private seed behind, under the same standalone recovery limits below.
+Committed mode resolves the ref and lets Git materialize the final destination.
+It never stashes or resets the caller's working files or index. Git applies
+checkout conversions and runs checkout hooks in the final worktree. No temporary
+worktree or intermediate file clone is created.
 
-Cowtree always populates tracked files through CoW and prepares a clean index.
+Cowtree reserves tracked parent directories and uses Git's exclusive
+``checkout-index`` operation. Colliding files or directories fail instead of
+silently replacing one another on a case-insensitive filesystem. Committed
+creation requires Git 2.36 or newer for native hook dispatch.
+
+Before publication, Cowtree rejects staged changes and hidden index flags left
+by hooks, then checks content against a fresh index. A hook cannot conceal
+different tracked bytes through cached timestamps. This mode pays Git checkout
+and verification costs and does not provide warm-cache inheritance. The existing
+same-filesystem and native-volume admission rules still apply.
+
+Clean-checkout mode populates tracked files through CoW. Both modes prepare a clean index.
 There is no pass-through for arbitrary Git arguments. ``-B``, ``--force`` on
 ``add``, ``--orphan``, ``--cow``, ``--no-checkout``, tracking options, and
 unknown options are rejected.
@@ -86,96 +92,37 @@ doctor result, and ``2`` for invalid command syntax.
 
 ``cowtree --version`` reports the compiled package version. Add ``--json`` for
 ``version`` and ``revision`` fields. Native builds embed ``COWTREE_BUILD_REVISION``
-when the builder supplies it. The Python compatibility command reads the
-installer's PEP 610 metadata instead. Missing provenance is null ("unknown" in
+when the builder supplies it. Missing provenance is null ("unknown" in
 text), never the current repository's HEAD.
 
-Python API
-----------
+Rust API
+--------
 
-Import the four public operations from ``cowtree.core`` and their request and
-result types from ``cowtree.types``. Their signatures are::
+The ``cowtree`` library in ``crates/libcowtree`` exposes::
 
-    add_worktree(request: WorktreeAddRequest) -> Worktree
-    list_all_worktrees(source: Path | None = None) -> list[Worktree]
-    remove_worktree(path: Path, *, source: Path | None = None,
-                    force: bool = False) -> None
-    inspect_path(path: Path) -> DoctorReport
+    add_worktree(&AddRequest) -> WorktreeResult<Worktree>
+    list_worktrees(Option<&Path>) -> WorktreeResult<Vec<Worktree>>
+    remove_worktree(&Path, Option<&Path>, bool) -> WorktreeResult<()>
+    inspect_path(&Path) -> WorktreeResult<DoctorReport>
 
-These functions call the required Rust engine through PyO3. The old ``runner``
-argument is removed. Fault-injection tests now exercise the Rust transaction
-directly rather than replacing Python subprocess calls.
+``AddRequest::new(path)`` selects the current checkout, detached HEAD, and
+``HEAD``. Set ``source`` to select another checkout. ``Branch::New`` creates a
+branch and ``Branch::Existing`` attaches an unused branch. ``SourceMode::Committed``
+materializes the requested ref. ``Lock::Retain`` retains the worktree lock and
+its optional reason. ``Cancellation`` lets a caller request rollback between
+native operations.
 
-``WorktreeAddRequest`` is a frozen dataclass with this constructor::
+``Worktree`` contains the registered path, optional HEAD and branch, detached,
+prunable, and locked flags, and an optional lock reason. Branch names are full
+refs such as ``refs/heads/agent/task``. Paths use Git's registered spelling.
+On filesystems that consider different Unicode spellings the same name,
+Cowtree compares existing directories by filesystem identity during creation
+and rollback. Missing unrelated registrations do not prevent another add.
 
-    WorktreeAddRequest(
-        path: Path,
-        source: Path | None = None,
-        branch: str | None = None,
-        commitish: str = "HEAD",
-        detach: bool = False,
-        lock: bool = False,
-        reason: str | None = None,
-        existing_branch: str | None = None,
-        source_mode: SourceMode = SourceMode.CHECKOUT,
-    )
-
-``path`` is required. Relative paths resolve from the caller's current
-directory, including when ``source`` names another checkout. A missing
-``source`` selects the current repository. Leaving both ``branch`` and
-``existing_branch`` unset selects a detached worktree.
-``detach=True`` is an explicit equivalent. ``branch`` and ``detach=True``
-conflict. ``reason`` requires ``lock=True``. String fields must be nonempty
-when supplied and cannot contain NUL bytes.
-
-This replaces the earlier ``WorktreeAddRequest(args=[...])`` API. Migrate each
-supported option to its named field. Raw Git arguments are not accepted.
-
-For example:
-
-.. code-block:: python
-
-    from pathlib import Path
-
-    from cowtree.core import add_worktree, remove_worktree
-    from cowtree.types import Worktree, WorktreeAddRequest
-
-    source: Path = Path("/path/to/repo")
-    request: WorktreeAddRequest = WorktreeAddRequest(
-        path=Path("/path/to/worktrees/idea"),
-        source=source,
-        branch="scratch/idea",
-    )
-    worktree: Worktree = add_worktree(request=request)
-    remove_worktree(path=worktree.path, source=source)
-
-Return values
-~~~~~~~~~~~~~
-
-``add_worktree`` returns the registered ``Worktree`` after cloning and index
-validation. ``list_all_worktrees`` returns every worktree reported by Git,
-including the main checkout and worktrees created outside cowtree.
-
-``Worktree`` is frozen and contains ``path: Path``, ``head: str | None``,
-``branch: str | None``, ``detached: bool``, ``prunable: bool``, ``locked: bool``,
-and ``reason: str | None``. Branch names are full refs such as
-``refs/heads/scratch/idea``. ``reason`` is the optional lock reason.
-``to_json_text()`` serializes these fields with ``path`` as a string.
-``cowtree list --json`` returns an array of the same objects.
-
-Paths use Git's registered spelling. On filesystems that treat different Unicode
-spellings as the same name, cowtree matches existing directories by filesystem
-identity during creation and rollback. Missing unrelated registrations do not
-prevent an independent add.
-
-``inspect_path`` returns a frozen ``DoctorReport`` with ``path: Path``,
-``filesystem: FilesystemKind``, ``clone_tool: CloneTool | None``, and
-``reason: str | None``. The enums live in ``cowtree.types``. Filesystem values
-are ``clonefile``, ``reflink``, ``block_clone``, or ``unsupported``.
-``supported`` is true only when
-a native clone probe succeeds and ``clone_tool`` is present. An unsupported
-filesystem returns a report with ``supported=False``. Invalid directories and
-operational probe failures raise an error.
+``DoctorReport`` records the tested path, native mechanism, and refusal reason.
+``supported()`` is true only when the clone-and-independent-write probe passes.
+An unsupported volume returns a report. Invalid directories and operational
+probe failures return typed errors.
 
 Requirements
 ------------
@@ -205,8 +152,8 @@ Native clone mechanisms are:
   POSIX executable permissions. Real symlinks require Windows symlink privileges
   and a checkout configured to preserve them.
 
-Windows support covers standalone commands only. Managed commands return a typed
-unsupported result before creating state. Their lock inheritance, process
+Windows exposes standalone commands only. Managed commands are available on
+macOS and Linux. Their lock inheritance, process
 supervision, and durability port is tracked separately. See
 `Windows qualification <windows-native.rst>`_.
 
@@ -218,8 +165,8 @@ qualification matrix.
 Failures and concurrency
 ------------------------
 
-Operations raise ``CowtreeError`` with a ``CowtreeErrorCode`` in ``code`` and
-a diagnostic string in ``message``. Import both types from ``cowtree.errors``.
+Operations return ``WorktreeError``. Its ``code()`` method exposes the stable
+CLI category, while the typed error retains its original cause.
 
 .. list-table:: Error codes
    :header-rows: 1
@@ -277,7 +224,7 @@ Workspace protocol design
 The `versioned workspace design <workspace-protocol.rst>`_ explains the
 immutable snapshots, path reservations, fencing tokens, and batched publication
 used by managed workspaces. The `managed workspace guide
-<managed-workspaces.rst>`_ defines the available CLI and Python operations.
+<managed-workspaces.rst>`_ defines the available CLI and Rust operations.
 Transparent file-descriptor rebinding, native change tracking, and distributed
 coordination remain future work. Bounded model checks do not establish those
 capabilities or power-loss durability.
@@ -294,28 +241,16 @@ access, and development checks. Bug reports and questions do not require a vouch
 Development
 -----------
 
-Use ``uv`` for dependencies, tests, linting, and builds::
+::
 
-    uv sync --group dev
-    uv run ruff check .
-    uv run ruff format --check .
-    uv run ty check
-    uv lock --check
-    uv run pytest
-    uv build
+    cargo fmt --all --check
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo test --workspace --all-targets --all-features
+    cargo run -p xtask -- specs --cache /absolute/evidence/tlc
 
-Require native CoW support instead of allowing unsupported-filesystem skips::
-
-    COWTREE_EXPECT_SUPPORTED=1 uv run --group test pytest -q
-
-Run the Linux filesystem matrix in a disposable VM using the prerequisites and
-commands in `filesystem validation`_. That document also describes mount
-selection, concurrency stress controls, and the limits of the tests.
-
-Integration tests live in ``tests/``. Inline tests live beside the code and are
-stripped from builds by ``inline-tests``. Install local hooks with
-``uv run prek install``. See `benchmarks <../benchmarks/>`_ for benchmark fixtures
-and the `native engine guide <rust-extension.rst>`_ for ownership and packaging.
+Native filesystem cases require a qualifying volume. Set
+``COWTREE_EXPECT_SUPPORTED=1`` so missing clone support fails the run. The Linux
+filesystem matrix also tests refusal on ext4 and XFS without reflinks.
 
 Batched publication verification
 ---------------------------------
@@ -335,9 +270,7 @@ Run the complete publication example with::
 
     cargo run --locked -p cowtree-metadata --example publish
 
-The standalone ``cowtree.core`` API does not use this backend. The managed
-``cowtree.workspace.Workspace`` API uses it for publication and coordinates
-filesystem installation in Python. Calling the Rust authority directly changes
-only its logical view. Python coordinates installation, using ``libcowtree`` for
-tree traversal, hashing, and native cloning. The remaining lifecycle port is
-separate from the standalone native CLI.
+Standalone operations do not use this authority. ``cowtree_workspace::Workspace``
+uses it in-process for publication and coordinates filesystem installation,
+checkpoint retention, and recovery. Calling the metadata authority directly
+changes only its logical view. Use the managed API for physical workspaces.

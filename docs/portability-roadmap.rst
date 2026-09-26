@@ -33,7 +33,7 @@ An NTFS system disk was left untouched; it was not reformatted for this test.
 Managed implementation sequence
 -------------------------------
 
-1. **Make managed platform selection importable.** ``src/cowtree/durable.py``,
+1. **Port managed platform primitives.** ``crates/workspace/src/durability.rs``,
    ``workspace.py``, ``leaves.py``, ``lifecycle.py``, and ``checks.py`` import
    the Unix-only `fcntl module`_ unconditionally. Standalone native cloning
    and Git locking already select platform-specific implementations.
@@ -62,14 +62,14 @@ Managed implementation sequence
    its locks do not constrain mapped views. Test competing publishers,
    collection, handle closure, and process death.
 
-   ``src/cowtree/publication.py`` currently uses ``renamex_np`` or ``renameat2``
+   ``crates/workspace/src/durability.rs`` currently uses ``renamex_np`` or ``renameat2``
    to publish an absent directory. Qualify an exclusive Windows rename such as
    `FILE_RENAME_INFO`_ with replacement disabled. Rust immutable objects also
    depend on exclusive hard-link publication in ``objects.rs``. Probe that
    operation on the chosen ReFS version; a successful block clone does not
    qualify every filesystem operation used by the authority.
 
-4. **Establish durable name publication.** ``src/cowtree/durable.py`` opens
+4. **Establish durable name publication.** ``crates/workspace/src/records.rs`` opens
    directories with ``O_DIRECTORY``; Rust ``durability.rs`` opens and syncs them
    using Unix-compatible behavior. Implement file and name-persistence barriers
    for Windows, including the directory creation boundaries in ``database.rs``.
@@ -83,7 +83,7 @@ Managed implementation sequence
    metadata and descriptor-relative ``openat``/``statat``/``readlinkat`` to reject
    traversed symlink parents and changed sources. The Windows implementation
    must use stable handles and reject unexpected reparse-point traversal.
-   Python ``trees.py`` and ``install.py`` also require explicit treatment of
+   Rust ``tree_clone.rs`` and ``installation.rs`` also require explicit treatment of
    executable modes, symlinks, hard links, case collisions, and names that
    Windows cannot represent. Test Cargo caches with real compiler metadata and
    absolute paths. Continue requiring explicit derived-cache prefixes; BSMR
@@ -122,7 +122,7 @@ Qualification and adoption
 --------------------------
 
 Use a disposable Windows host with a real ReFS volume and an unsupported volume.
-After the native API cases pass, run the Rust authority tests, Python integration
+After the native API cases pass, run the Rust authority and managed integration tests
 tests, and mounted workspace tests there. Preserve the same independent byte
 oracle across interrupted import, concurrent forks, retained checkpoints,
 publication, stale-candidate rejection, corruption refusal, and collection.

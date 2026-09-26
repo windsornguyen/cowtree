@@ -38,7 +38,7 @@ Integration suite
 
 Run from the repository root on a filesystem that supports cloning::
 
-    COWTREE_EXPECT_SUPPORTED=1 uv run --group test pytest -q
+    COWTREE_EXPECT_SUPPORTED=1 cargo test --workspace --all-features
 
 ``COWTREE_EXPECT_SUPPORTED=1`` makes missing native clone support a test failure.
 Without that setting, tests requiring native CoW skip when it is unavailable.
@@ -103,6 +103,6 @@ executable-mode records, concurrent operations, cancellation cleanup, and
 cross-volume refusal. No managed-lifecycle support is inferred from these tests.
 
 On an existing ReFS volume, set ``COWTREE_NTFS_TEST`` to a new disposable directory
-on NTFS, then run ``uv run --group test pytest -q windows --basetemp R:\cowtree-tests``.
+on NTFS, then run ``pwsh -NoProfile -File scripts/test_windows.ps1``.
 Pytest removes its basetemp directory. The general ``src``/``tests`` and managed
 suites currently target POSIX; Windows contributors should use this dedicated suite.

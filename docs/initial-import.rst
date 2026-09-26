@@ -1,6 +1,13 @@
 Initial import
 ==============
 
+.. note::
+
+   Benchmark commands and receipts below describe the preceding implementation.
+   Their harnesses remain in Git history. The native runtime is tested with
+   ``cargo test --workspace --all-features``. Use ``benchmarks/README.rst`` for
+   the native creation benchmark. Earlier timings do not qualify this refactor.
+
 Workspace initialization captures one immutable source/cache node, then imports
 its source manifest into the SQLite authority in bounded chunks. It creates no
 per-file lease, view, upload, or proposal rows. This path is available only before
@@ -44,8 +51,8 @@ edits to the original checkout do not change that captured input. If capture
 never completed, existing recovery removes the unacknowledged partial store.
 Corrupt or changed captured bytes fail explicitly rather than being recaptured.
 
-The Python API exposes ``Workspace.import_status(root)`` and
-``Workspace.recover_initialization(root)``. Standalone authority users have
+The Rust API exposes ``Workspace::import_status(root)`` and
+``Workspace::recover_initialization(root)``. Standalone authority users have
 ``begin_import``, ``import_chunk``, ``status_import``, and ``finish_import``.
 Stores must match the current declaration; opening an incompatible store fails
 without schema or data migration. See `Declarative schema <schema.rst>`_. Import
@@ -81,7 +88,8 @@ transactions, source corruption, namespace/mode validation, bounded chunks,
 same-identity retries, and collection during import::
 
     cargo test --locked -p cowtree-metadata --all-features --test import --test import_crash
-    uv run pytest mounted/test_import.py mounted/test_import_review.py
+    cargo test -p cowtree-metadata --all-features import
+    cargo test -p cowtree-cli --all-features failed_tree_flush
 
 These tests qualify process interruption. A machine/storage power cut remains
 a separate experiment. The required file and directory durability barriers are

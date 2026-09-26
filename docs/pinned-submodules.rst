@@ -5,9 +5,9 @@ Managed workspaces reject submodules by default. To opt into read-only
 materialization of clean, initialized direct dependencies::
 
     cowtree workspace --root ../store init --source . \
-        --binary ./target/debug/cowtree-metadata --submodules materialize-pinned
+        --submodules materialize-pinned
 
-Python uses ``PathPolicy(submodules=SubmodulePolicy.MATERIALIZE_PINNED)``.
+Rust uses ``Policy { submodules: SubmodulePolicy::MaterializePinned, ..Policy::default() }``.
 The policy enum lives in ``cowtree.submodule_types``.
 
 This mode places dependency files in Cowtree's private Git projection as regular
@@ -30,4 +30,4 @@ No fetch, submodule update, or implicit dependency version change occurs.
 Validate the complete flow and refusal cases on a native CoW filesystem::
 
     cargo build -p cowtree-metadata
-    uv run pytest -q mounted/test_submodules.py
+    cargo test -p cowtree-cli --test policies pinned_dependencies

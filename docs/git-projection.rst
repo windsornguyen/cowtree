@@ -19,7 +19,7 @@ An explicit reuse request requires the exact source tree and parent list of
 the validated commit. It fails on a mismatch instead of creating another commit.
 The authoritative filesystem snapshot still records working-file bytes.
 
-Run ``uv run pytest tests/test_projection.py`` to check source selection, normal
+Run ``cargo test -p cowtree-cli --all-features --tests`` to check source selection, normal
 Git attribute conversion, index isolation, ref restrictions, and retries.
 Gitlink inspection
 ------------------

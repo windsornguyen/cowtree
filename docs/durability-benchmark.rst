@@ -1,6 +1,13 @@
 Durability call benchmark
 =========================
 
+.. note::
+
+   Historical measurements on this page describe their recorded revisions.
+   Their original harnesses remain in Git history. For the Rust-only runtime,
+   use ``cargo test --workspace --all-features`` and the native benchmark in
+   ``benchmarks/README.rst``. Earlier qualification is not a result for a later refactor.
+
 Run this probe before changing the filesystem flush boundary. It compares the
 legacy double flush, ``std::fs::File::sync_all``, and the current single full
 flush, using fresh 4 KiB files, immutable publication, and a directory barrier.

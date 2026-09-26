@@ -27,6 +27,6 @@ created destination and removes it on failure.
 This module does not register a Git worktree, publish a snapshot, or establish
 durability. Those boundaries belong to the workspace adapter.
 
-Run ``COWTREE_EXPECT_SUPPORTED=1 uv run pytest tests/test_trees.py`` on a
+Run ``COWTREE_EXPECT_SUPPORTED=1 cargo test -p libcowtree`` on a
 supported filesystem. Source and target must reside on a mount supporting
 the native clone operation. A failed clone removes only its new destination.

@@ -39,8 +39,8 @@ schema artifacts. Tool sources and binaries remain in ignored ``.tools/``.
 
 Run from the Cowtree checkout::
 
-    uv run python scripts/schema.py generate
-    uv run python scripts/schema.py check
+    cargo run -p xtask -- schema generate
+    cargo run -p xtask -- schema check
 
 ``generate`` writes the current initialization SQL. ``check`` fails if regeneration
 differs from the checked-in output. CI builds the pinned Community source and
@@ -54,7 +54,7 @@ Save the declaration before editing, then generate a plan against the new source
 
     cp crates/metadata/schema.sql /tmp/cowtree-before.sql
     # Edit crates/metadata/schema.sql.
-    uv run python scripts/schema.py diff --from-schema /tmp/cowtree-before.sql \
+    cargo run -p xtask -- schema diff --from-schema /tmp/cowtree-before.sql \
         > /tmp/cowtree-schema-diff.sql
 
 The wrapper freezes both input files into owned temporary files. It prints SQL

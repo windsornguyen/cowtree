@@ -59,72 +59,61 @@ An owner does not need to request a vouch to repair workflow authentication.
 Development rules
 -----------------
 
-Use small commits with conventional commit messages. Use ``uv`` for package
-management. Do not use ``pip``, ``poetry``, or ``requirements.txt`` in this repo.
+Use small commits with conventional commit messages. Use Cargo for dependencies and native checks. Do not use ``pip``, ``poetry``, or ``requirements.txt`` in this repo.
 There is no CLA.
 
 Setup
 -----
 
-::
+Install Rust 1.85 or later, a C toolchain, and Git. Build the runtime::
 
-    $ uv sync --group dev
-    $ uv run prek install
+    cargo build --locked --release -p cowtree-cli
 
 Checks
 ------
 
 ::
 
-    $ uv lock --check
-    $ uv run ruff check .
-    $ uv run ruff format --check .
-    $ uv run ty check
-    $ uv run pytest
-    $ uv build
+    cargo fmt --all --check
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    cargo test --locked --workspace --all-targets --all-features
+    cargo doc --locked --workspace --no-deps
 
-Dependencies
-------------
+Native filesystem tests require APFS, reflink-capable XFS or btrfs, or a supported
+Windows volume. Set ``COWTREE_EXPECT_SUPPORTED=1`` to make missing clone support
+fail the run. ``scripts/fs_matrix.sh`` exercises Linux support and refusal cases
+on owned loopback images. The Windows script uses its own temporary virtual disk.
 
-Use ``uv add`` and ``uv remove`` for dependency edits. Use ``--group`` for
-local development tools and ``--optional`` for published extras.
+Dependencies and benchmarks
+---------------------------
 
-Do not edit ``uv.lock`` by hand.
+Use ``cargo add`` and ``cargo remove`` and commit ``Cargo.lock``. Keep each crate
+focused on its ownership boundary. ``lib.rs`` and ``mod.rs`` are documented indexes.
 
-Benchmark changes should regenerate their evidence outside the checkout:
+Measure complete creation with the same fixture and alternating order::
 
-::
+    cargo run --release -p cowtree-cli --example benchmark -- \
+        --binary target/release/cowtree --files 8192 --trials 5 \
+        --output /tmp/cowtree-benchmark.json
 
-    $ uv run python benchmarks/run.py --preset quick --runs 2 --out /tmp/cowtree-bench/results.json
-    $ uv run python benchmarks/plot.py /tmp/cowtree-bench/results.json --out-dir /tmp/cowtree-bench/plots
+Keep generated measurements, logs, and plots outside the checkout. Commit runnable
+methods and reviewed analysis. Release evidence needs source identities, exact
+commands, and retained receipts. See `production gates <docs/production-readiness.rst>`_.
 
-Commit reproduction scripts and reviewed analysis in ``docs/``. Do not commit
-generated measurements, per-run reports, logs, or plots. The default output
-directories ``benchmarks/results/`` and ``benchmarks/plots/`` are ignored.
-Release qualification evidence belongs in a retained artifact archive with
-checksums and source identities; see `production gates <docs/production-readiness.rst>`_.
+The schema and protocol model checks also run through Cargo::
+
+    cargo run -p xtask -- schema check --atlas .tools/atlas
+    cargo run -p xtask -- specs --cache /absolute/path/outside-checkout
+
+Atlas must match ``tools/atlas-revision.txt``. The model checker is vendored and
+checksum-verified. These checks never modify a workspace authority.
 
 Scope
 -----
 
-``cowtree`` should stay narrow. It creates and manages CoW-backed Git
-worktrees. Agent orchestration, dashboards, branch policy, and process
-management belong in callers such as Wingman.
-
-Rust metadata backend
----------------------
-
-Use Cargo for ``crates/metadata`` dependencies and its committed lockfile.
-Python dependency management continues to use ``uv``. Rust changes must pass::
-
-    cargo fmt --all --check
-    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-    cargo test --locked --workspace --all-targets --all-features
-    cargo run --locked -p cowtree-metadata --example publish
-
-``fault-injection`` enables process-crash and bounded-pause hooks for tests only.
-Default builds do not respond to those environment variables. Document the actual
-fault boundary tested; process termination does not prove power-loss durability.
+Cowtree owns CoW worktrees, private snapshots, checked publication, and recovery.
+Agent orchestration, dashboards, and branch policy belong in callers. Git remains
+the repository authority and is invoked through explicit argument vectors.
 
 Generated GitHub Actions
 ------------------------

@@ -68,7 +68,7 @@ those bytes from being accepted as an ordinary publish or release.
 Proposed operations
 -------------------
 
-These names define responsibilities, not an RPC encoding or released Python API.
+These names define responsibilities, not an RPC encoding or released library API.
 
 .. list-table:: Metadata interface
    :header-rows: 1

@@ -1,129 +1,34 @@
-cowtree benchmarks
-==================
+Benchmarking Cowtree
+====================
 
-These benchmarks compare normal ``git worktree add`` against ``cowtree add``.
-They measure real commands on a temporary Git repository.
+Measure the operation the caller pays for. Complete creation includes executable
+startup, Git admission, registration, cloning, and content verification::
 
-The north star is space efficiency: how much redundant checked-out payload does
-the workflow avoid when many branches are active at once? Wall time is reported
-because it matters, but it is secondary for this project.
+    cargo build --release --locked -p cowtree-cli
+    cargo run --release -p cowtree-cli --example benchmark -- \
+        --binary target/release/cowtree --files 8192 --trials 5 \
+        --output /tmp/cowtree-benchmark.json
 
-Run
----
+The native harness rotates Git and Cowtree, checks every destination's bytes and
+Git status outside the timer, and retires only its owned worktrees. Failed
+fixtures remain available for inspection. Payloads are deterministic and highly
+compressible. They do not represent every source repository.
 
-::
-
-    $ uv sync --group dev
-    $ uv run python benchmarks/run.py --preset quick --runs 2 --out /tmp/cowtree-bench/results.json
-    $ uv run python benchmarks/plot.py /tmp/cowtree-bench/results.json --out-dir /tmp/cowtree-bench/plots
-
-For a heavier run:
-
-::
-
-    $ uv run python benchmarks/run.py --preset full --runs 3 --out /tmp/cowtree-full/results.json
-
-Keep generated JSON, logs, images, and per-run reports out of source control.
-The default ``results/`` and ``plots/`` directories are ignored. Commit methods
-and reviewed analysis under ``docs/``; retain raw evidence as separate artifacts
-identified by checksums. `Workspace performance <../docs/performance.rst>`_
-separates import, fork, prepared lookup, and compiler reuse.
-
-Profiles
---------
-
-``basic``
-    One worktree. Small repo. This is the everyday "try one thing" case.
-
-``average``
-    Several worktrees. Medium repo. This is the normal AI-agent branching case.
-
-``intensive``
-    Many worktrees. Larger repo. This is the "agent fleet" case where ordinary
-    full checkout writes become annoying.
-
-Plots
------
-
-``plots/elapsed_seconds.png``
-    Median total create time for all worktrees in the profile.
-
-``plots/time_ratio.png``
-    Median ``git worktree add`` time divided by median ``cowtree add`` time.
-    Values above ``1.0`` mean ``cowtree`` was faster; values below ``1.0`` mean
-    Git was faster.
-
-``plots/payload_copied.png``
-    Logical tracked payload that the checkout path materializes. ``cowtree``
-    still writes metadata; it does not copy file contents when CoW is available.
-
-``plots/payload_avoided.png``
-    Redundant checked-out payload avoided by using CoW clones.
-
-Notes
------
-
-APFS and reflink filesystems do not expose a simple per-directory "new physical
-bytes allocated by this clone" number. ``du`` and ``st_blocks`` count shared
-extents per file, which overstates CoW clones. ``run.py`` therefore reports
-logical tracked payload copied by the checkout path. The APFS harness below
-measures physical container allocation. Treat the wall-time charts
-as supporting evidence, not the claim.
+Use ``--files 512`` to expose startup overhead and a larger file count to expose
+traversal and clone costs. ``--bytes-per-file`` changes payload size. Report raw
+samples and medians. Do not compare runs taken under different host load as a
+controlled speedup. See `native profiling <../docs/native-profiling.rst>`_.
 
 Physical APFS allocation
 ------------------------
 
-The `space-efficiency report <../docs/space-efficiency.rst>`_ documents the
-Linux v6.12 workload, measurement method, observed savings, and limitations.
+The historical allocation experiment at ``f97d7cc`` used separate APFS images,
+settled filesystem allocation counters, complete inventories, and controlled
+edit/delete/recreate histories. Its harness is retained at that immutable
+revision in Git history. See `space efficiency <../docs/space-efficiency.rst>`_
+for results and measurement boundaries.
 
-``space.py`` measures physical allocation in an isolated case-sensitive APFS
-sparse image on macOS. It counts shared extents once, including filesystem
-metadata. It uses the same source and random operation plan for Git and cowtree.
-Each arm has its own image. No existing worktree is modified.
-
-Prepare a pinned public workload::
-
-    $ git clone --bare --depth 1 --branch v6.12 https://github.com/torvalds/linux.git /tmp/linux.git
-    $ uv sync --group dev
-    $ uv run python -m benchmarks.space --source /tmp/linux.git \
-        --commit adc218676eef25575469234709c2d87185ca223a \
-        --output /tmp/cowtree-space-pilot --leaves 1 --trials 1 --capacity-gib 16
-
-Run three paired four-worktree trials after the pilot succeeds::
-
-    $ uv run python -m benchmarks.space --source /tmp/linux.git \
-        --commit adc218676eef25575469234709c2d87185ca223a \
-        --output /tmp/cowtree-space --leaves 4 --trials 3
-    $ uv run python -m benchmarks.space_report /tmp/cowtree-space \
-        --output /tmp/cowtree-space-report
-
-Use a new output directory. Every arm retains its detached image and raw JSON
-measurements, operation history, and source manifest. Images grow on demand;
-each is capped at 32 GiB by default. Before creating an image, the harness
-requires its full capacity plus an 80 GiB host reserve. Completed images are
-retained for inspection, so additional trials require additional host space.
-Delete only a completed run's detached ``*.sparseimage`` files to reclaim them.
-
-Measurements use APFS container capacity counters after a normal detach and
-reattach, followed by three identical samples. This flushes deferred allocation.
-Per-file ``du`` is not used for savings. Sparse-image host allocation is also
-recorded: it can retain freed space and is a separate high-water footprint.
-Empty image and source-only measurements distinguish additional-fleet savings
-from total source-plus-fleet savings. Ratios are measured, never assumed or
-clamped. Operation times exclude verification and image checkpoints.
-
-Each active tree receives atomic editor saves to a seeded 1% sample of tracked
-regular C/header files. The benchmark then performs two rounds of random
-remove/recreate and in-place comment appends. One directory is deleted externally
-before explicit API registry cleanup. Full verification hashes every tracked
-file, file mode and symlink before edits and after the final round, checks exact
-path inventories, and verifies the unchanged source. Intermediate verification
-hashes all edited files plus about 128 clean paths, and checks HEAD, dirty paths,
-and the exact worktree registry. The paired arms must produce identical states.
-
-These are sequential lifecycle and isolation checks. They do not claim process
-crash recovery, concurrent linearizability, or successful compilation of the
-modified project. The workload appends C comments and does not execute downloaded
-project code. Results depend on file-size distribution, metadata overhead, edit
-fraction, and how the editor writes files. A universal 99% physical saving does
-not follow from avoiding 99% of file-content writes.
+Logical file size and ``du`` do not measure shared physical blocks accurately.
+The creation benchmark does not report allocation savings. Warm-cache reuse,
+initial import, fresh managed forks, and prepared leaves are separate workloads.
+Keep their historical receipts tied to the implementation that produced them.

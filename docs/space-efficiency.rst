@@ -1,6 +1,13 @@
 Physical space efficiency
 =========================
 
+.. note::
+
+   Historical measurements on this page describe their recorded revisions.
+   Their original harnesses remain in Git history. For the Rust-only runtime,
+   use ``cargo test --workspace --all-features`` and the native benchmark in
+   ``benchmarks/README.rst``. Earlier qualification is not a result for a later refactor.
+
 A matched Linux v6.12 workload on APFS measured 96 to 97 percent savings in
 additional-worktree allocation. It did not support a universal 99 percent
 physical-space claim. These are observations from a specific earlier Cowtree

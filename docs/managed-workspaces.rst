@@ -16,12 +16,10 @@ and leaves must share a filesystem. Keep the store outside every checkout.
 Install Rust and Git, then run from this repository::
 
     cargo build --locked --release -p cowtree-metadata
-    uv sync --locked
-    uv run cowtree workspace --root /absolute/store init \
+    cowtree workspace --root /absolute/store init \
         --source /absolute/project \
-        --binary /absolute/cowtree/target/release/cowtree-metadata \
         --derived build --ephemeral .env
-    uv run cowtree workspace --root /absolute/store fork /absolute/writer
+    cowtree workspace --root /absolute/store fork /absolute/writer
 
 The returned JSON contains the leaf ``id``. The store records the exact executable
 path; it does not silently choose a different backend. Git author identity must
@@ -89,7 +87,7 @@ submitted paths stay intact. Edits made after capture remain private when its
 receipt is acknowledged. Git projection records only source and retains the
 exact checked commit identity. It does not move a caller-owned Git branch.
 
-The Python API returns the exact ``Candidate`` so callers can retain it for
+The Rust API returns the exact ``Candidate`` so callers can retain it for
 idempotent commit retries. From the CLI, save the request's leaf and sequence
 from ``capture``; use ``result LEAF SEQUENCE`` after an uncertain commit reply.
 A new capture is a new request, not a retry of an old request.
@@ -144,43 +142,40 @@ Supported interface
 Every managed CLI command begins ``cowtree workspace --root STORE``.
 ``--help`` describes its exact arguments. ``git cowtree`` has the same interface.
 
-.. list-table:: CLI to Python API
+.. list-table:: CLI to Rust API
    :header-rows: 1
    :widths: 35 65
 
    * - CLI
-     - Python owner and operation
-   * - ``init``
-     - ``cowtree.workspace.Workspace.create``; ``Workspace.open`` reopens a store.
-   * - ``import-status``
-     - ``Workspace.import_status`` returns the durable initial-import cursor.
+     - ``cowtree_workspace::Workspace`` method
+   * - ``init``, ``import-status``
+     - ``create(&CreateRequest)``, ``import_status(root)``.
    * - ``list``, ``fork``
-     - ``cowtree.leaves.Leaves.records``, ``Leaves.fork``.
+     - ``list()``, ``fork(path, node)``.
    * - ``acquire``, ``sync``, ``discard``
-     - ``cowtree.views.Views.acquire``, ``Views.sync``, ``Views.discard``.
+     - ``acquire(id, paths)``, ``sync(id)``, ``discard(id, paths)``.
    * - ``seal``, ``retain``, ``release``
-     - ``cowtree.seals.Seals.seal``, ``Seals.retain``, ``Seals.release``.
+     - ``seal(id, Retention::Manual)``, ``retain(node)``, ``release(node)``.
    * - ``capture``, ``abort``
-     - ``cowtree.captures.Captures.capture``, ``Captures.abort``.
+     - ``capture(id)``, ``abort(id)``.
    * - ``prepare``, ``commit``, ``result``
-     - ``cowtree.publications.Publications.prepare``, ``commit``, ``result``.
+     - ``prepare(id)``, ``commit(&Candidate)``, ``result(RequestId)``.
    * - ``check``
-     - ``cowtree.checks.Checks.validate``.
+     - ``check(&CheckRequest)`` with explicit argv, deadline, and native supervisor.
    * - ``prepare-batch``, ``check-batch``, ``commit-batch``
-     - ``cowtree.batches.Batches.prepare``, ``validate``, ``commit``.
+     - ``prepare_batch``, ``check_batch``, ``commit_batch``.
    * - ``resolve``
-     - ``cowtree.resolutions.Resolutions.resolve`` with ``Choice`` values.
+     - ``resolve(id, choices)`` with ``Choice::Local`` or ``Choice::Published``.
    * - ``drop``, ``collect``
-     - ``cowtree.lifecycle.Lifecycle.drop``, ``cowtree.collection.Collector.collect``.
-   * - ``recover``
-     - ``Workspace.recover_initialization`` or a recovering ``Workspace.session``.
-   * - ``log``
-     - Read node records under ``Workspace.session`` through ``Workspace.nodes``.
+     - ``drop_leaf(id, DropPolicy)``, ``collect()``.
+   * - ``recover``, ``log``
+     - ``recover()``, ``recover_initialization(root)``, ``log()``.
 
-Construct each service with the opened ``Workspace``. Read records under a session
-when several observations must be consistent. Service mutations open their own
-sessions; do not nest them inside an existing session. The original ``cowtree.core``
-API remains for independent tracked-file worktrees.
+Open a handle with ``Workspace::open(root)``. Each operation takes the workspace
+lock, checks its identity, recovers durable intents, and uses the linked metadata
+authority. Rust callers supply the native supervisor path in ``CheckRequest``.
+The CLI uses its current executable. Independent tracked-file operations remain
+in ``libcowtree``.
 
 ``discard LEAF PATH...`` restores each selected path to its submitted capture,
 if one exists, or its last installed origin. It preserves the pending request
@@ -243,22 +238,13 @@ as read-only source in the private projection, without nested Git control state.
 Qualification
 -------------
 
-Run from a source checkout on a supported filesystem::
+Run the native APIs, CLI scenarios, and injected interruption cases::
 
-    cargo test --locked --workspace --all-targets --all-features
-    cargo build --locked -p cowtree-metadata
-    uv run pytest src tests mounted integration
-    uv run python scripts/check_specs.py --cache /absolute/tlc-cache
-    PYTHONPATH=src uv run python benchmarks/workspace_history.py --help
-    PYTHONPATH=src uv run python benchmarks/warm_cache.py --help
+    COWTREE_EXPECT_SUPPORTED=1 cargo test --workspace --all-targets --all-features
+    cargo run -p xtask -- specs --cache /absolute/path/outside-checkout
 
-The Hollywood-generated CI runs the mounted suite on APFS and Btrfs/reflink-XFS,
-plus explicit refusal tests on ext4 and XFS without reflinks. `Verification
-<verification.rst>`_ identifies exact bounded models and runtime trace mappings.
-`Lifecycle qualification <workspace-qualification.rst>`_ records seeded histories.
-Process-exit tests do not establish power-loss durability or distributed consensus.
-
-Future native/distributed filesystems, transparent writer rebinding, native change
-tracking and unbounded Lean/Veil proofs remain separate work. The
-`design reference <agent-filesystem.rst>`_ preserves those goals; this guide defines
-the local contract callers can exercise today.
+The effectful tests exercise real cloning and Git. They cover private-write
+isolation, source mutation during validation, lost capture and commit replies,
+interrupted allocation, failed flushes, process-death lock ownership, batches,
+collection, and pinned dependencies. Test-only fault hooks are absent from default
+builds. Process interruption tests do not qualify power-loss durability.

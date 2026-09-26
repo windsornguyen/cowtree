@@ -1,6 +1,13 @@
 Windows native clone qualification
 ==================================
 
+.. note::
+
+   Historical measurements on this page describe their recorded revisions.
+   Their original harnesses remain in Git history. For the Rust-only runtime,
+   use ``cargo test --workspace --all-features`` and the native benchmark in
+   ``benchmarks/README.rst``. Earlier qualification is not a result for a later refactor.
+
 The native file adapter uses ``FSCTL_DUPLICATE_EXTENTS_TO_FILE`` only when the
 volume advertises ``FILE_SUPPORTS_BLOCK_REFCOUNTING``. It requires matching
 volume identities, copies integrity settings, and sends cluster-aligned ranges

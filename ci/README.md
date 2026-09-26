@@ -17,7 +17,7 @@ regeneration before running the local check; CI compares against committed files
 
 | Source             | Generated workflow or action                                             |
 | ------------------ | ------------------------------------------------------------------------ |
-| `ci.ts`            | Python CI, declarative schema, native filesystem checks, protocol model, generated-file gate |
+| `ci.ts`            | Native builds, declarative schema, filesystem checks, protocol models, generated-file gate |
 | `metadata.ts`      | SQLite Linux/macOS checks and minimum Rust compiler                      |
 | `vouch.ts`         | Contributor eligibility and issue-based vouch management                 |
 | `vouch-actions.ts` | Typed PR resolution and eligibility actions                              |
@@ -25,7 +25,7 @@ regeneration before running the local check; CI compares against committed files
 
 Simple commands use Hollywood's structured executable/argument API. Stateful
 steps use typed action inputs and `ScriptExec`; no `unsafeShell` is used. The
-existing Python/Rust runners and test commands are preserved. Vouch and the new
+runtime jobs compile Rust and execute native tests. Vouch and the
 generation check use `ubuntu-24.04`.
 
 The declarative-schema job builds the Apache-2.0 Atlas Community CLI from the

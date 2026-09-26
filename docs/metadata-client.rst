@@ -1,26 +1,20 @@
-Python metadata client
-======================
+Metadata client
+===============
 
-``cowtree.metadata.Metadata`` owns one local Rust process and exchanges one
-JSON request and response at a time. Pydantic validates response records.
-The Rust authority remains the only writer of its SQLite schema and object
-directory. A domain failure raises ``CowtreeError`` and does not become an
-empty result. ``MetadataError.reason`` preserves the authority's failure code,
-so callers distinguish a changed tip from I/O failure without parsing messages.
-A subsequent valid request can use the same process.
+Managed workspace sessions call ``cowtree_metadata::Store`` directly. Each session
+holds one SQLite connection while it reconciles filesystem journals and authority
+operations. The workspace lock is inherited by mutating Git children.
 
-Select the executable explicitly. Missing executables fail without attempting
-an installation or selecting another implementation. The client enforces the
-128 MiB protocol line limit and a response deadline, including partial lines.
-Closing the context closes input, waits for exit, and reaps an unresponsive
-process. This is an internal adapter for the filesystem workspace lifecycle.
+The authority returns typed errors with stable wire codes, retry actions, and
+operation details. The native CLI preserves that structured context in error
+responses. Object installation verifies content identities and retains origin
+objects through authority records and client pins.
 
-Build and verify the real boundary with::
+``cowtree-metadata`` remains a diagnostic JSON-line executable for exercising the
+low-level protocol. It is not required by normal managed commands. Build and test
+that interface with::
 
-    cargo build --locked -p cowtree-metadata
-    uv sync --locked --group test
-    uv run pytest -q integration
+    cargo build -p cowtree-metadata
+    cargo test -p cowtree-metadata --all-features
 
-The integration profile requires the compiled executable and fails if it is
-missing. The SQLite CI jobs build it and run the profile on Linux and macOS.
-The ordinary Python test profile remains independent of Rust installation.
+See ``crates/metadata/README.md`` for the protocol and retention obligations.
