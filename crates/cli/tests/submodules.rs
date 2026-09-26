@@ -44,9 +44,7 @@ fn invariant_policy_refusals_leave_no_destination() -> Result {
         assert!(!output.status.success());
         let failure: Failure = serde_json::from_slice(&output.stderr)?;
         assert_eq!(failure.code, expected);
-        // The message names the child's filesystem path, spelled with the platform's separator.
-        let child = Path::new("vendor").join("child");
-        assert!(failure.message.contains(child.to_str().ok_or("path")?));
+        assert!(failure.message.contains("vendor/child"));
         assert!(!fixture.target().exists());
     }
     Ok(())
@@ -133,7 +131,9 @@ fn invariant_missing_submodule_objects_fail_before_claiming_the_destination() ->
     assert!(!output.status.success());
     let failure: Failure = serde_json::from_slice(&output.stderr)?;
     assert_eq!(failure.code, "submodule_unavailable");
-    assert!(failure.message.contains("vendor/child"));
+    // The message names the child's filesystem path, spelled with the platform's separator.
+    let child = Path::new("vendor").join("child");
+    assert!(failure.message.contains(child.to_str().ok_or("path")?));
     assert!(!fixture.target().exists());
     Ok(())
 }
