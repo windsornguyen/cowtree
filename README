@@ -24,9 +24,10 @@ private storage for the changed data and leaves the others untouched.
 Start
 -----
 
-Python 3.10+, Git, and a filesystem with native cloning. From a clean checkout::
+Git and a filesystem with native cloning. Build the native CLI from this
+checkout with Rust 1.85+::
 
-    uv tool install git+https://github.com/windsornguyen/cowtree
+    cargo install --locked --path crates/cli
     cowtree doctor .
     cowtree add -b scratch/idea ../wt/idea
     cowtree list --json
@@ -73,8 +74,8 @@ space savings for that workload. Including the shared source, the after-edit
 saving was 74.71%. Full inventories matched and the source remained unchanged.
 
 `Figure, recorded evidence, and method <docs/space-efficiency.rst>`_.
-`Run the experiment <benchmarks/README.rst#physical-apfs-allocation>`_.
-The harness and Python plotting scripts are in ``benchmarks/``.
+`Benchmark methods <benchmarks/README.rst>`_ distinguish historical physical
+allocation evidence from the native creation benchmark.
 
 Quick API
 ---------
@@ -93,54 +94,67 @@ Standalone commands clone tracked files, not ignored build caches::
 ``--branch`` attaches an unused local branch. ``-b`` creates one. Removal keeps
 the branch. Add ``--help`` for options or ``--`` before option-like paths.
 
-Python operations live in ``cowtree.core``. Requests and results live in
-``cowtree.types``::
+Uninitialized submodules remain empty by default. Initialized children require
+``--submodules materialize-pinned`` to create independent child repositories at
+their pinned commits. ``--submodules reject`` retains blanket refusal.
+See `standalone submodules <docs/standalone-submodules.rst>`_ for local-object
+requirements, Git configuration, and cleanup semantics.
 
-    add_worktree(request, runner=None) -> Worktree
-    list_all_worktrees(source=None, runner=None) -> list[Worktree]
-    remove_worktree(path, *, source=None, force=False, runner=None) -> None
-    inspect_path(path, runner=None) -> DoctorReport
+Rust operations live in ``libcowtree``. For example:
 
-For example::
+.. code-block:: rust
 
-    from pathlib import Path
-    from cowtree.core import add_worktree
-    from cowtree.types import WorktreeAddRequest
+    use cowtree::{AddRequest, Branch, add_worktree};
 
-    request = WorktreeAddRequest(path=Path("../wt/idea"), branch="scratch/idea")
-    tree = add_worktree(request=request)
+    let mut request = AddRequest::new("../wt/idea".into());
+    request.branch = Branch::New("scratch/idea".into());
+    let tree = add_worktree(&request)?;
 
-Failures raise ``CowtreeError`` with a typed ``code``. CLI ``--json`` failures
-go to stderr. Exit status: 0 success, 1 operation failure, 2 invalid syntax.
-See `the full standalone contract <docs/standalone.rst>`_ for types, JSON
-shapes, source ownership, and cleanup limits.
+Failures return typed errors. CLI ``--json`` failures go to stderr. Exit status:
+0 success, 1 operation failure, 2 invalid syntax. See the
+`standalone contract <docs/standalone.rst>`_ for ownership and cleanup limits.
 
-To reuse build caches, retain checkpoints, and publish changes after checks
-pass, use ``cowtree workspace`` and its Rust metadata service. Start with the `Cargo quickstart
-<docs/cargo-workspaces.rst#first-workspace>`_ or the `managed API
-<docs/managed-workspaces.rst>`_. Managed Windows support is not implemented.
-Current qualification is for opt-in developer use, not mission-critical use.
+The same Rust CLI also manages build caches, checkpoints, checked publication,
+and recovery::
+
+    cowtree workspace --root /absolute/store init \
+        --source /absolute/project --derived target
+    cowtree workspace --root /absolute/store fork /absolute/worktrees/task
+
+``cowtree-workspace`` exposes these workflows as Rust methods. Its sessions call
+``cowtree-metadata`` directly. A native supervisor keeps validation bounded when
+the coordinating process exits. Git remains a subprocess dependency.
+
+Start with the `Cargo quickstart <docs/cargo-workspaces.rst#first-workspace>`_
+or the `managed API <docs/managed-workspaces.rst>`_. Managed Windows support is
+not implemented. Qualification remains for opt-in developer use.
 
 Where to look
 -------------
 
 `docs/install.rst <docs/install.rst>`_
-    Local macOS arm64 bundle, including Python and the metadata executable.
+    Build and install the native executable.
 `docs/performance.rst <docs/performance.rst>`_
     Import, fresh forks, prepared paths, and compiler reuse measured separately.
 `docs/filesystems.rst <docs/filesystems.rst>`_
     Native filesystem tests and the support matrix.
 `docs/production-readiness.rst <docs/production-readiness.rst>`_
     Deployment gates and what the current evidence does not establish.
-`src/cowtree/ <src/cowtree/>`_
-    Python API, CLI, native clones, and managed filesystem operations.
-`crates/cowtree-metadata/ <crates/cowtree-metadata/README.md>`_
-    Rust service that records checkpoints and coordinates publication.
-`tests/ <tests/>`_, `integration/ <integration/>`_, `mounted/ <mounted/>`_, `windows/ <windows/>`_
-    Command contracts, authority integration, real filesystems, and Windows.
+`crates/workspace/ <crates/workspace/README.md>`_
+    Managed filesystem coordination and recovery.
+`crates/libcowtree/ <crates/libcowtree/README.md>`_
+    Required Rust engine for standalone operations and snapshot trees.
+`crates/git/ <crates/git/README.md>`_
+    Shared synchronous Git execution and explicit lock inheritance.
+`crates/cli/ <crates/cli/>`_
+    Native cowtree and git-cowtree executables. No Python runtime.
+`crates/metadata/ <crates/metadata/README.md>`_
+    Rust authority linked into managed operations, with a diagnostic JSON-line CLI.
+Tests live beside their implementation or under each crate's ``tests/`` directory.
+    Command contracts, authority integration, and native filesystem invariants.
 `specs/ <specs/>`_
     Executable protocol models. See `verification <docs/verification.rst>`_ for limits.
 `benchmarks/ <benchmarks/README.rst>`_
-    Public workloads, measurement procedures, and plotting scripts.
+    Native creation benchmark and historical measurement procedures.
 `CONTRIBUTING.rst <CONTRIBUTING.rst>`_
     Setup, checks, and contributor access. MIT license. See `LICENSE <LICENSE>`_.

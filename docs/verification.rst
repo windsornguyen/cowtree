@@ -39,7 +39,7 @@ Checker
 
 With Java 11+ and uv, run::
 
-    uv run python scripts/check_specs.py --cache /absolute/path/outside-checkout
+    cargo run -p xtask -- specs --cache /absolute/path/outside-checkout
 
 The runner checks 24 configurations with TLC release 1.8.0, one worker,
 a 1 GiB heap, fingerprint polynomial zero and a per-case timeout. It retains
@@ -70,15 +70,14 @@ receipts used release 1.7.4. Those results retain their original identities.
 Replay
 ------
 
-Build the metadata binary, then run on a native copy-on-write filesystem::
+Run the native replay on a qualifying copy-on-write filesystem::
 
-    cargo build -p cowtree-metadata
-    uv run pytest mounted/test_trace_replay.py
+    COWTREE_EXPECT_SUPPORTED=1 cargo test -p cowtree-cli --test replay
 
 ``tests/traces`` retains unmodified JSON exports and manifests binding the
 checker, model, configuration and export hashes. Unknown schema/actions or
-changed input bytes fail before workspace creation. Each manifest contains a
-reviewed API action sequence. Expected states come from TLC's export.
+changed input bytes fail before workspace creation. The native adapter in ``crates/cli/tests/replay.rs`` checks these records.
+Each manifest contains a reviewed API action sequence. Expected states come from TLC's export.
 
 The stale-base witness runs two real leaves with disjoint leases. Both capture
 proposals before either publishes; the second then publishes over the newer tip.
@@ -106,7 +105,7 @@ Checks may allocate private validation leaves; those are outside the projected
 model state. Intermediate steps in this compound mapping are not verified by
 EpochLog. The mounted recovery tests exercise them separately.
 
-Working file edits remain private until capture. Warm ``Views.discard`` restores
+Working file edits remain private until capture. Warm ``Workspace::discard`` restores
 the pending value, or the last installed origin without a pending change, through
 the installation journal. It does not call metadata ``discard``, whose separate
 contract records a revert to the metadata origin as newer local intent.

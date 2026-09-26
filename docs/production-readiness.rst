@@ -154,9 +154,8 @@ deployment filesystem, using an absent scratch path::
 
     cargo test --locked --workspace --all-targets --all-features
     cargo build --locked -p cowtree-metadata
-    COWTREE_EXPECT_SUPPORTED=1 PYTHONPATH=src uv run pytest src tests integration mounted \
-        --basetemp /deployment-volume/owned-cowtree-tests
-    uv run python scripts/check_specs.py --cache /outside-checkout/tlc-cache
+    COWTREE_EXPECT_SUPPORTED=1 cargo test --workspace --all-targets --all-features
+    cargo run -p xtask -- specs --cache /outside-checkout/tlc-cache
 
 The ``--basetemp`` directory belongs to pytest and may be deleted by it; never
 point it at a working store or a directory containing other data. The exact

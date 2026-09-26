@@ -1,11 +1,7 @@
 .cache/
-.pytest_cache/
-.ruff_cache/
 .venv/
-__pycache__/
 build/
 dist/
-*.egg-info/
 
 target/
 node_modules/

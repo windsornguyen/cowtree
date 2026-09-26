@@ -26,7 +26,7 @@ remove only empty directories. Unmanaged files obstruct replacement instead
 of being deleted. Derived directory metadata and cache validity belong to
 the higher-level workspace policy.
 
-Run ``COWTREE_EXPECT_SUPPORTED=1 uv run pytest tests/test_install.py``. These
+Run ``COWTREE_EXPECT_SUPPORTED=1 cargo test -p cowtree-workspace installation``. These
 tests cover interrupted calls and retained filesystem state, not power loss.
 
 Coordinators can pass owned lock descriptors to ``CommandRunner`` and ``Metadata``.

@@ -1,7 +1,7 @@
 Warm managed leaves
 ====================
 
-``Leaves(workspace).fork(path, node=None)`` creates a managed Git worktree from
+``Workspace::fork(path, node)`` creates a managed Git worktree from
 the current warm tip or a named private snapshot. It inherits that node's
 eligible caches and retained origins. The destination must be absent, on the
 workspace filesystem, with an existing parent, outside the store and every
@@ -27,7 +27,7 @@ survives an interrupted operation cleanup. Uncertain ownership stops recovery
 with the operation record retained. Direct mutation of the owned metadata store
 or an initializing directory is outside this cooperative protocol.
 
-Run ``cargo build --locked -p cowtree-metadata`` and ``uv run pytest mounted/test_fork.py``
+Run ``cargo test --locked -p cowtree-workspace --test forks``
 on a native CoW mount. A barrier test proves overlapping clone phases without
 turning host timing noise into a performance assertion.
 

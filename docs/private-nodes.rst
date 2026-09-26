@@ -1,7 +1,7 @@
 Private snapshot nodes
 ======================
 
-``Nodes.seal`` captures source and declared caches into an owned CoW image.
+``Nodes::seal`` captures source and declared caches into an owned CoW image.
 It flushes the image and node record before creating its private Git reference.
 The node carries source identities, retained per-path origins, its parent node,
 and a source-only Git commit. A fresh node identity distinguishes repeated
@@ -28,6 +28,6 @@ independent authority, including directory prefixes. This portable subset also
 applies on case-sensitive mounts. Existing Git-worktree commands retain their
 broader filename contract.
 
-Run ``COWTREE_EXPECT_SUPPORTED=1 uv run pytest tests/test_nodes.py``. The tests
+Run ``COWTREE_EXPECT_SUPPORTED=1 cargo test -p cowtree-cli --test managed private_checkpoints``. The tests
 exercise cache inheritance, private ancestry, source-only projection, alias
 rejection, and detection of modified snapshot source bytes.

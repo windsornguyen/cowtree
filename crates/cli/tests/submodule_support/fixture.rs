@@ -1,0 +1,117 @@
+// Copyright (c) 2026 Windsor Nguyen
+
+//! Real local repositories for standalone submodule tests.
+
+use serde::Deserialize;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Output},
+};
+
+pub type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+pub struct Fixture {
+    pub directory: tempfile::TempDir,
+    pub source: PathBuf,
+    pub pin: String,
+}
+
+/// Run a command with the machine's system and global Git configuration hidden. Git for Windows sets
+/// `core.autocrlf=true` system-wide, which would rewrite the checked-out bytes the tests compare,
+/// and Cowtree's own Git calls inherit the same environment.
+///
+/// `NUL` is not readable by every Git for Windows build. Keep a real empty file alive until
+/// the command and its Git children finish.
+fn output_without_machine_config(command: &mut Command) -> Result<Output> {
+    let global_config = tempfile::NamedTempFile::new()?;
+    let output = command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", global_config.path())
+        .output()?;
+    Ok(output)
+}
+
+pub fn git(root: &Path, args: &[&str]) -> Result<String> {
+    let output = output_without_machine_config(Command::new("git").arg("-C").arg(root).args(args))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
+    }
+    Ok(String::from_utf8(output.stdout)?.trim_end().into())
+}
+
+pub fn init(root: &Path) -> Result {
+    fs::create_dir(root)?;
+    for args in [
+        vec!["init", "-q"],
+        vec!["config", "user.name", "Test"],
+        vec!["config", "user.email", "test@example.invalid"],
+        vec!["config", "commit.gpgsign", "false"],
+    ] {
+        git(root, &args)?;
+    }
+    fs::write(root.join("file"), b"original\n")?;
+    git(root, &["add", "."])?;
+    git(root, &["commit", "-qm", "fixture"])?;
+    Ok(())
+}
+
+impl Fixture {
+    pub fn new(initialized: bool) -> Result<Option<Self>> {
+        let directory = tempfile::tempdir()?;
+        let supported = cowtree::inspect_path(directory.path())?.supported();
+        if std::env::var_os("COWTREE_EXPECT_SUPPORTED").is_some_and(|value| value == "1") {
+            assert!(supported);
+        }
+        if !supported {
+            return Ok(None);
+        }
+        let source = directory.path().join("source");
+        let child = directory.path().join("child");
+        init(&source)?;
+        init(&child)?;
+        git(
+            &source,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "-q",
+                "--name",
+                "named-child",
+                child.to_str().ok_or("path")?,
+                "vendor/child",
+            ],
+        )?;
+        git(&source, &["commit", "-qam", "pin"])?;
+        let pin = git(&child, &["rev-parse", "HEAD"])?;
+        if !initialized {
+            git(&source, &["submodule", "deinit", "-f", "--all"])?;
+        }
+        Ok(Some(Self { directory, source, pin }))
+    }
+
+    pub fn target(&self) -> PathBuf {
+        self.directory.path().join("target")
+    }
+    pub fn cowtree(&self, args: &[&str]) -> Result<Output> {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cowtree"));
+        command.current_dir(&self.source).args(args);
+        let output = output_without_machine_config(&mut command)?;
+        Ok(output)
+    }
+    pub fn add(&self, args: &[&str]) -> Result<Output> {
+        let target = self.target();
+        let mut argv = vec!["add", "--json", "--detach"];
+        argv.extend_from_slice(args);
+        argv.push(target.to_str().ok_or("path")?);
+        self.cowtree(&argv)
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Failure {
+    pub code: String,
+    pub message: String,
+}

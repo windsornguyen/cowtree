@@ -1,7 +1,7 @@
 Private checkpoints
 ====================
 
-``Seals.seal(leaf, retain=True)`` freezes the leaf's eligible files and caches,
+``Workspace::seal(leaf, Retention::Manual)`` freezes the leaf's eligible files and caches,
 records the previous node as its parent, and advances the managed Git view
 without changing working bytes. Published per-path origins stay unchanged.
 Forking that node inherits unpublished context but no reservation authority.
@@ -19,4 +19,4 @@ Workspace sessions reconcile abandoned local journals before admitting another
 operation. Low-level inspection can use ``session(recover=False)`` to inspect a
 blocked journal without applying it.
 
-Run ``uv run pytest mounted/test_seals.py`` after building the metadata binary.
+Run ``cargo test -p cowtree-cli --test managed private_checkpoints``.

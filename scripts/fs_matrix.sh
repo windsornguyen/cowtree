@@ -6,7 +6,7 @@ if [[ $(uname -s) != Linux || ${EUID} -ne 0 ]]; then
     printf 'FAIL  Linux root privileges required\n' >&2
     exit 1
 fi
-for command in uv git truncate losetup mount umount mkfs.btrfs mkfs.xfs mkfs.ext4; do
+for command in cargo git truncate losetup mount umount mkfs.btrfs mkfs.xfs mkfs.ext4; do
     if ! command -v "$command" >/dev/null; then
         printf 'FAIL  missing command: %s\n' "$command" >&2
         exit 1
@@ -24,8 +24,6 @@ loop_device=''
 mounted=0
 mountpoint="$scratch/mount"
 mkdir "$mountpoint"
-export UV_CACHE_DIR="$scratch/uv-cache"
-export UV_PROJECT_ENVIRONMENT="$scratch/venv"
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_CONFIG_GLOBAL=/dev/null
 
@@ -78,13 +76,14 @@ for filesystem in btrfs xfs-reflink xfs-no-reflink ext4; do
     esac
     mount -- "$loop_device" "$mountpoint"
     mounted=1
+    mkdir "$mountpoint/tests"
     if (( expected )); then
-        COWTREE_EXPECT_SUPPORTED=1 uv run --locked --no-default-groups --project "$repo" --group test \
-            pytest "$repo/tests" "$repo/src" "$repo/mounted" --basetemp "$mountpoint/tests" -q
+        TMPDIR="$mountpoint/tests" COWTREE_EXPECT_SUPPORTED=1 cargo test \
+            --locked --manifest-path "$repo/Cargo.toml" --workspace --all-targets \
+            --all-features -- --test-threads=4
     else
-        COWTREE_EXPECT_SUPPORTED=0 uv run --locked --no-default-groups --project "$repo" --group test \
-            pytest "$repo/tests/test_engine.py" --basetemp "$mountpoint/tests" -q \
-            -k 'filesystem_support_matches_expectation or unsupported_filesystem_leaves_no_state'
+        TMPDIR="$mountpoint/tests" COWTREE_EXPECT_SUPPORTED=0 cargo test \
+            --locked --manifest-path "$repo/Cargo.toml" -p libcowtree --test unsupported
     fi
     cleanup_mount
     rm -- "$image"

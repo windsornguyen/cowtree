@@ -1,5 +1,5 @@
-import { defineMatrix, expr, format, job, workflow } from "@dedalus-labs/hollywood";
-import { checkout, run, uv } from "./steps.ts";
+import { defineMatrix, format, job, workflow } from "@dedalus-labs/hollywood";
+import { checkout, run } from "./steps.ts";
 
 const platforms = defineMatrix({ os: ["ubuntu-24.04", "macos-latest"] });
 export const metadata = workflow(
@@ -49,13 +49,9 @@ export const metadata = workflow(
           run("Build production metadata interface", "cargo", [
             "+1.97.1", "build", "--locked", "-p", "cowtree-metadata",
           ]),
-          uv,
-          run("Install Python integration dependencies", "uv", ["sync", "--locked", "--group", "test"]),
-          run("Test Python metadata integration", "uv", ["run", "--no-sync", "pytest", "-q", "integration"]),
-          {
-            ...run("Test APFS workspace integration", "uv", ["run", "--no-sync", "pytest", "-q", "mounted"]),
-            if: expr<boolean>("runner.os == 'macOS'"),
-          },
+          run("Build native command interfaces", "cargo", [
+            "+1.97.1", "build", "--locked", "--release", "-p", "cowtree-cli",
+          ]),
           {
             ...run("Run production example with test hooks disabled", "cargo", [
               "+1.97.1",

@@ -1,6 +1,13 @@
 Managed workspace qualification
 ===============================
 
+.. note::
+
+   Benchmark commands and receipts below describe the preceding implementation.
+   Their harnesses remain in Git history. The native runtime is tested with
+   ``cargo test --workspace --all-features``. Use ``benchmarks/README.rst`` for
+   the native creation benchmark. Earlier timings do not qualify this refactor.
+
 ``benchmarks/workspace_history.py`` runs seeded histories against real managed
 Git worktrees and the SQLite authority. An independent model tracks file bytes,
 executable modes, symlink text, published origins, private snapshots, and cache

@@ -1,6 +1,13 @@
 Cargo cache comparison
 ======================
 
+.. note::
+
+   Benchmark commands and receipts below describe the preceding implementation.
+   Their harnesses remain in Git history. The native runtime is tested with
+   ``cargo test --workspace --all-features``. Use ``benchmarks/README.rst`` for
+   the native creation benchmark. Earlier timings do not qualify this refactor.
+
 A warm Cowtree workspace completed creation and its first build in 0.675 seconds,
 compared with 3.608 seconds for Git plus a warm shared compiler cache. Four warm
 workspaces added 2.01 MiB of physical storage compared with 691.5 MiB for full copies.

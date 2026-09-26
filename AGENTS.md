@@ -1,17 +1,16 @@
 # Codebase Rules
 
-- Do not use `Any`.
 - Optimize for space efficiency first.
 - Avoid redundant checked-out Git file payloads.
 - Treat wall-time, CPU, and I/O speedups as secondary wins.
 - Type every value that crosses a function boundary, including strings.
 - Use enums for named cases.
-- Use dataclasses or Pydantic models for structured values.
+- Use Rust structs and enums for structured values.
 - Return structured values as classes, not loose dictionaries.
 - Save return values to a named variable before returning them.
-- Keep subprocess commands as `list[str]`; never build shell command strings.
-- Use `uv` for package management, commands, lockfiles, and builds.
-- Do not use `pip`, `poetry`, or `requirements.txt`.
+- Keep subprocess arguments separate with `std::process::Command`; never build shell command strings.
+- Use Cargo for dependencies, builds, tests, and repository development commands.
+- The shipped runtime is Rust only. Keep Git as a subprocess dependency.
 - Fail closed with typed errors.
 - Do not commit generated benchmark results, run logs, or plots.
 - Keep benchmark methods and reviewed analysis in docs, with runnable scripts in benchmarks.

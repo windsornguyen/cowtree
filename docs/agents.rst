@@ -11,13 +11,13 @@ Install once
 Install Cowtree and verify the Git extension in the same environment that
 launches the agent::
 
-    uv tool install git+https://github.com/windsornguyen/cowtree
+    cargo install --locked --git https://github.com/windsornguyen/cowtree cowtree-cli
     git cowtree --version
     git cowtree doctor .
 
 The installer supplies both ``cowtree`` and ``git-cowtree``. Git discovers
 ``git-cowtree`` on ``PATH`` when invoked as ``git cowtree``. If Git cannot find
-it, add the directory printed by ``uv tool dir --bin`` to the agent's PATH.
+it, add Cargo's binary directory (usually ``~/.cargo/bin``) to the agent's PATH.
 
 Change the worktree commands
 ----------------------------
@@ -30,8 +30,8 @@ Configure the agent's create, inspect, and remove commands as follows::
 
 Use a distinct branch and destination for each task. ``--committed`` selects
 the named commit and leaves the source checkout's staged and unstaged edits
-alone. It materializes a temporary seed, so it pays Git checkout cost. The
-default clean-checkout mode can clone directly and avoids that seed.
+alone. Git materializes the final destination directly, followed by content
+verification. The default clean-checkout mode clones existing tracked files.
 
 Git's ``-C`` selects the repository before the extension runs::
 
@@ -97,8 +97,7 @@ repo-local alias in disposable repositories. It checks relative paths from
 refusal, branch retention, and argument rejection before state changes.
 On macOS or Linux with native cloning, run::
 
-    uv sync --group dev
-    COWTREE_EXPECT_SUPPORTED=1 uv run pytest -q tests/test_git_extension.py
+    COWTREE_EXPECT_SUPPORTED=1 cargo test -p cowtree-cli --test standalone
 
 The Windows ReFS jobs run the same tests on x64 and ARM64 through
 ``scripts/test_windows.ps1``.

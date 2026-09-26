@@ -1,7 +1,7 @@
 Frozen source requests
 =======================
 
-``Captures.capture`` seals the current private source, acquires matching
+``Workspace::capture`` seals the current private source, acquires matching
 authority, and records one request identity before submitting its values.
 The authority's returned proposal must match those captured values. Later
 working edits do not change the request. A leaf admits one pending publication.
@@ -17,4 +17,4 @@ remains an explicit failure with the capture retained. Use cancellation or
 explicit resolution instead of changing the request's inputs.
 
 Run ``cargo test --locked -p cowtree-metadata --test cancellation`` and
-``uv run pytest mounted/test_captures.py`` after rebuilding the metadata binary.
+``cargo test -p cowtree-cli --all-features lost_capture``.

@@ -1,12 +1,12 @@
 Acquisition and synchronization
 ===============================
 
-``Views.acquire`` reserves requested paths and existing descendants of a prefix.
+``Workspace::acquire`` reserves requested paths and existing descendants of a prefix.
 It installs current clean origins before activation. Private edits are retained
 when their original value still matches the granted origin. Divergent private
 edits require explicit resolution. A request with no paths is invalid.
 
-``Views.sync`` advances clean paths to the published tip. Dirty paths and every
+``Workspace::sync`` advances clean paths to the published tip. Dirty paths and every
 path in an unresolved proposal remain untouched. Each path retains its own
 origin, so a leaf can contain private edits based on older published values.
 The Git view advances without overwriting working bytes. A caller-owned branch

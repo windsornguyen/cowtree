@@ -1,6 +1,13 @@
 Workspace performance
 =====================
 
+.. note::
+
+   Historical measurements on this page describe their recorded revisions.
+   Their original harnesses remain in Git history. For the Rust-only runtime,
+   use ``cargo test --workspace --all-features`` and the native benchmark in
+   ``benchmarks/README.rst``. Earlier qualification is not a result for a later refactor.
+
 The `Cargo cache comparison <cache.rst>`_ measures complete warm-workspace
 creation and builds against Git and a shared compiler cache, plus physical APFS
 allocation for inherited compiled targets.

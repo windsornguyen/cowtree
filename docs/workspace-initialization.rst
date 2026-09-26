@@ -1,7 +1,7 @@
 Local workspace initialization
 ===============================
 
-``Workspace.create(root, source, binary, policy)`` imports a clean Git checkout
+``Workspace::create(&CreateRequest)`` imports a clean Git checkout
 into a local SQLite authority and an immutable warm snapshot. The store must
 be absent, outside the source checkout, on a native CoW filesystem. Select the
 compiled metadata executable explicitly. The source writer remains quiescent
@@ -16,7 +16,7 @@ The original checkout, index, and branch remain unchanged.
 
 Initialization uses a sibling staging directory and exclusive rename. The
 workspace becomes visible only after its data and configuration are durable.
-``Workspace.recover_initialization`` resumes a completed immutable capture from
+``Workspace::recover_initialization`` resumes a completed immutable capture from
 its durable import cursor and publishes the completed store. Before capture or
 the import record is complete, it removes only the owned unacknowledged staging
 store and matching private Git refs. An existing workspace is an idempotent
@@ -30,7 +30,7 @@ for progress, throughput measurements, and the independent byte oracle.
 Build and test with::
 
     cargo build --locked -p cowtree-metadata
-    uv run pytest -q mounted/test_bootstrap.py
+    cargo test -p cowtree-cli --all-features failed_tree_flush
 
 The mounted profile requires native CoW rather than skipping. CI runs it on
 APFS and the supported btrfs/XFS matrix mounts. The ordinary Python and metadata

@@ -1,7 +1,7 @@
 Collection and retention
 ========================
 
-``Collector.collect`` preserves the initial and current warm snapshots, live
+``Workspace::collect`` preserves the initial and current warm snapshots, live
 leaf bases, explicit retention pins, pending captures and validation nodes,
 and inputs named by incomplete client operations. Private parent history alone
 does not retain a filesystem image. Retain a checkpoint explicitly when it
@@ -34,7 +34,7 @@ removing its Git ref, and deleting part of its tree. They also overlap collectio
 with a blocked fork and an active check, and check receipt and log retention.
 These process-exit tests do not simulate a power loss or faulty storage hardware.
 
-Run ``uv run pytest mounted/test_collection.py`` on a native CoW mount.
+Run ``cargo test -p cowtree-cli --all-features --tests`` on a native CoW mount.
 
 Authoritative origin retention
 ------------------------------
@@ -53,7 +53,7 @@ its filesystem record is gone and no remaining client record needs those bytes.
 Private source bytes that have never been uploaded remain owned by their snapshot
 image; client pins describe authoritative origin objects, not a second payload copy.
 
-Managed authorities must be accessed through their ``Workspace.session`` lock.
+Managed mutations must use ``Workspace`` methods, which hold the workspace session lock.
 Direct metadata mutations during client filesystem operations are outside this
 contract. Construction upload/proposal pins protect newly published bytes until
 the successful client operation publishes its origin pins. On failure, old pins

@@ -1,8 +1,8 @@
 Checked publication
 ====================
 
-Capture source with ``Captures.capture``, prepare it with ``Publications.prepare``,
-validate it with ``Checks.validate``, and commit the returned exact candidate.
+Capture source with ``Workspace::capture``, prepare it with ``Workspace::prepare``,
+validate it with ``Workspace::check``, and commit the returned exact candidate.
 Preparation against another tip invalidates previous validation. Commit refuses
 a missing validation, a different candidate, or modified validated source.
 
@@ -18,6 +18,5 @@ edits made after capture. ``result`` reads a retained receipt, and retrying the
 same candidate returns the same result. A failed check leaves the captured
 request available for explicit retry or cancellation.
 
-Run ``uv run pytest mounted/test_publications.py`` after building the metadata
-binary. This checks actual bytes, cache inheritance, validation refusal, exact
+Run ``cargo test -p cowtree-cli --all-features --test managed``. This checks actual bytes, cache inheritance, validation refusal, exact
 retries, and lost replies. It is not a power-loss or distributed-consensus proof.

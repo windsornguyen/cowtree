@@ -58,30 +58,31 @@ test("every local action artifact belongs to a declared generated action", async
   assert.deepEqual(actual, expected);
 });
 
-test("the Python and SQLite matrices and production test-hook checks stay intact", () => {
+test("native runtime matrices preserve supported platforms and production hook checks", () => {
   assert.equal(ci.jobs.windows["runs-on"], "windows-2025");
-  assert.equal(ci.jobs.windows["timeout-minutes"], 15);
   assert.equal(ci.jobs["windows-arm"]["runs-on"], "windows-11-arm");
-  assert.deepEqual(ci.jobs["windows-arm"].env, { UV_PYTHON: "cpython-3.14-windows-aarch64-none" });
-  assert.deepEqual(ci.jobs.test.strategy.matrix.values, {
-    os: ["ubuntu-latest", "macos-latest"],
-    "python-version": ["3.10", "3.11", "3.12", "3.13", "3.14"],
-  });
-  assert.deepEqual(ci.jobs.test.env, { UV_PYTHON: ci.jobs.test.strategy.matrix.refs["python-version"] });
-  assert.deepEqual(metadata.jobs.metadata.strategy.matrix.values.os, [
-    "ubuntu-24.04",
-    "macos-latest",
-  ]);
-  assert.equal(metadata.jobs.metadata.strategy["fail-fast"], false);
-  const example = metadata.jobs.metadata.steps.find(
-    (step) => "env" in step && step.env !== undefined && "COWTREE_CRASH_AT" in step.env,
-  );
+  assert.deepEqual(ci.jobs["windows-arm"].env, { RUSTUP_TOOLCHAIN: "1.97.1-aarch64-pc-windows-msvc" });
+  assert.deepEqual(metadata.jobs.metadata.strategy.matrix.values.os, ["ubuntu-24.04", "macos-latest"]);
+  const example = metadata.jobs.metadata.steps.find((step) => "env" in step && step.env && "COWTREE_CRASH_AT" in step.env);
   assert.ok(example && "env" in example && example.env);
   assert.ok("COWTREE_CRASH_AT" in example.env && "COWTREE_PAUSE_AT" in example.env);
   assert.equal(example.env.COWTREE_CRASH_AT, "after-sql-commit");
   assert.equal(example.env.COWTREE_PAUSE_AT, "after-upload-pin");
   assert.deepEqual(ci.permissions, { contents: "read" });
   assert.deepEqual(metadata.permissions, { contents: "read" });
+});
+
+test("build and test jobs have no Python runtime installation", () => {
+  for (const job of [...Object.values(ci.jobs), ...Object.values(metadata.jobs)]) {
+    for (const step of job.steps) {
+      if ("run" in step && step.run?.kind === "command") {
+        assert.ok(!["uv", "python", "python3", "pip", "pytest"].includes(step.run.file));
+      }
+    }
+  }
+  const build = ci.jobs.build.steps.find((step) => "run" in step && step.run?.kind === "command" && step.run.file === "cargo");
+  assert.ok(build && "run" in build && build.run?.kind === "command");
+  assert.ok(build.run.args.includes("cowtree-cli"));
 });
 
 test("schema checks build pinned community source and verify generated SQL", async () => {
@@ -105,8 +106,8 @@ test("schema checks build pinned community source and verify generated SQL", asy
   const commands = schema.steps.flatMap((step) =>
     "run" in step && step.run?.kind === "command" ? [[step.run.file, ...step.run.args]] : [],
   );
-  assert.ok(commands.some((args) => args.includes("scripts/schema.py") && args.includes("check")));
-  assert.ok(commands.some((args) => args.includes("tests/test_schema_generation.py")));
+  assert.ok(commands.some((args) => args.includes("xtask") && args.includes("schema") && args.includes("check")));
+  assert.ok(commands.some((args) => args.includes("xtask") && args.includes("test")));
   assert.equal(schema.env.COWTREE_ATLAS, "${{ format('{0}/.tools/atlas', github.workspace) }}");
 });
 
@@ -122,7 +123,7 @@ test("privileged Vouch jobs load local code and policy only from the default bra
   assert.equal(manageVouch.concurrency["cancel-in-progress"], false);
 });
 
-test("native checks preserve ordered failure propagation and the setup-uv PATH", async () => {
+test("native checks preserve ordered failure propagation and the installed toolchain PATH", async () => {
   const calls: { file: string; args: readonly string[] }[] = [];
   const exec: ScriptExec = async (file, args) => {
     calls.push({ file, args });
@@ -132,7 +133,7 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
       stderr: "",
     };
   };
-  await checkFilesystems(exec, "/installed uv:/usr/bin");
+  await checkFilesystems(exec, "/installed tools:/usr/bin");
   assert.deepEqual(calls, [
     { file: "sudo", args: ["apt-get", "update"] },
     { file: "sudo", args: ["apt-get", "install", "-y", "btrfs-progs", "xfsprogs"] },
@@ -141,7 +142,7 @@ test("native checks preserve ordered failure propagation and the setup-uv PATH",
     { file: "rustup", args: ["which", "--toolchain", "1.97.1", "cargo"] },
     {
       file: "sudo",
-      args: ["env", "PATH=/rust/toolchain/bin:/installed uv:/usr/bin", "bash", "scripts/fs_matrix.sh"],
+      args: ["env", "PATH=/rust/toolchain/bin:/installed tools:/usr/bin", "bash", "scripts/fs_matrix.sh"],
     },
   ]);
   await assert.rejects(checkFilesystems(exec, undefined), /PATH is required/);

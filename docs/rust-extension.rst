@@ -1,58 +1,92 @@
-rust extension plan
-===================
+Native engine
+=============
 
-Keep the first release pure Python. That makes the CLI, API, errors, and
-benchmark contract easy to inspect.
+Cowtree runs as a Rust executable. It calls Git for refs, indexes, checkout
+conversions, and worktree registration. The filesystem shares unchanged file
+blocks and isolates later writes. Ordinary edits do not run a Cowtree watcher
+or create a checkpoint.
 
-Add Rust only after benchmarks show the Python per-file loop is the bottleneck.
-The candidate hot path is narrow:
+The CLI and Rust APIs use the same native operations. Managed workflows use
+one in-process SQLite connection per workspace session. A separate native
+supervisor bounds validation commands and retains their ownership lock if
+the coordinating process exits.
 
-* walk tracked Git paths
-* create parent directories
-* clone regular files with ``clonefile(2)`` or Linux reflinks
-* recreate symlinks
-* return a typed summary to Python
-
-The Python layer owns Git command construction, CLI parsing, request dataclasses,
-and user-facing errors. ``cowtree.native`` contains the current syscall boundary.
-
-Native contract
----------------
-
-Each clone operation receives a regular source file and an absent destination.
-It creates the destination exclusively, preserves its mode and modification time,
-and returns only after cloning finishes. A failed clone removes only the file it
-created. Cleanup failures identify the remaining path and preserve the original
-failure as their cause.
-
-The current macOS binding declares the ``clonefile(2)`` argument and return types
-at its foreign function interface (FFI). Linux holds both file descriptors open
-through ``FICLONE`` and metadata application. Neither path substitutes a byte copy.
-
-A future Rust implementation must preserve that contract. Keep unsafe calls in
-one FFI module, own descriptors with resource types, and retain operating-system
-errors as typed sources. Keep module roots as documented exports. Unit tests stay
-beside their implementation; filesystem qualification still runs on real mounts.
-
-Packaging
+Ownership
 ---------
 
-Use PyO3 with maturin if the native extension lands. PyO3 is the Rust binding
-layer for native Python modules, and maturin is the packaging tool that builds
-those modules into Python wheels.
+.. list-table:: Crates
+   :header-rows: 1
 
-Keep the extension as a library, not a second CLI binary. Maturin documents that
-shipping both a binary and library can duplicate wheel size; a Python entrypoint
-calling one native module avoids that trap.
+   * - Directory
+     - Responsibility
+   * - ``crates/libcowtree``
+     - Native cloning, tree capture, standalone Git worktrees, cancellation.
+   * - ``crates/git``
+     - Synchronous Git execution, command context, pipes, and explicit lock inheritance.
+   * - ``crates/workspace``
+     - Managed imports, warm forks, checkpoints, publication, recovery, collection.
+   * - ``crates/metadata``
+     - SQLite authority, fenced reservations, immutable objects, publication receipts.
+   * - ``crates/process``
+     - Validation deadlines, log limits, process groups, inherited locks.
+   * - ``crates/cli``
+     - Argument parsing and JSON output for ``cowtree`` and ``git-cowtree``.
+   * - ``crates/xtask``
+     - Development-only schema generation and protocol-model checking.
 
-Binary size budget
-------------------
+Each library has an index-only ``lib.rs``. Named modules own behavior. Rust
+errors retain their filesystem, process, Git, or authority cause until the CLI
+formats a diagnostic. Python and PyO3 are not part of the build or runtime.
 
-The native module should stay boring:
+Committed standalone creation checks out directly into its final destination.
+Checkout-based creation uses CoW clones of existing files. Both modes share
+one ownership and rollback transaction. Managed capture keeps one workspace
+session across its phases. Checkpoint publication has one owner, while recovery
+verifies persisted images before completing their journaled transitions.
 
-* no async runtime unless benchmarks prove it is needed
-* no Git implementation in Rust
-* no alternate fallback path
-* no broad dependency graph
+The managed store retains the executable path recorded at initialization as
+provenance. Validation uses the current caller's explicit supervisor executable.
+The CLI supplies its own path. It does not launch a formerly configured metadata
+service or interpreter when reopening an existing store.
 
-If the wheel grows materially, measure it in CI and document the tradeoff.
+Build and verify
+----------------
+
+From the repository root::
+
+    cargo build --locked --release -p cowtree-cli
+    cargo fmt --all --check
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    cargo test --locked --workspace --all-targets --all-features
+    cargo doc --locked --workspace --no-deps
+
+Standalone native cloning supports macOS, Linux, and Windows on qualifying
+filesystems. Managed filesystem ownership and recovery support macOS and Linux.
+The managed Windows port remains separate work.
+
+Performance
+-----------
+
+Measure complete creation, including startup, admission, Git calls, cloning,
+and content verification::
+
+    cargo run --release -p cowtree-cli --example benchmark -- \
+        --binary target/release/cowtree --files 8192 --trials 5 \
+        --output /tmp/cowtree-benchmark.json
+
+The benchmark alternates Git and Cowtree, checks every destination's bytes and
+Git status, and removes only its owned worktrees. It reports raw wall times.
+Logical fixture bytes are not physical allocation measurements.
+
+Add ``--source-mode committed`` to measure direct committed materialization.
+The default ``--source-mode checkout`` measures CoW cloning of the existing
+checkout. Compare each mode with Git on the same fixture and build.
+
+Standalone population creates each parent once and uses at most four clone
+workers. Every worker finishes before success or rollback can proceed.
+Cancellation is a shared atomic request checked between files. Native clone
+primitives create destinations exclusively, so an existence probe is unnecessary.
+The opened source descriptor is still validated before cloning.
+
+See `native profiling <native-profiling.rst>`_ for debugger and syscall evidence.
+Space savings, creation latency, and compiler cache reuse are separate results.

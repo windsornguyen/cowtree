@@ -1,0 +1,45 @@
+// Copyright (c) 2026 Windsor Nguyen
+
+//! Standalone inspection and retirement share Git's common repository lock.
+
+use crate::{Worktree, WorktreeError as Error, WorktreeResult as Result, git::Git};
+use std::path::Path;
+
+pub fn list_worktrees(source: Option<&Path>) -> Result<Vec<Worktree>> {
+    let repository = Git::discover(source)?;
+    let _lock = repository.lock()?;
+    repository.worktrees()
+}
+
+/// Remove a worktree through Git's dirty-file and lock checks without deleting refs.
+pub fn remove_worktree(path: &Path, source: Option<&Path>, force: bool) -> Result<()> {
+    let path = std::path::absolute(path).map_err(|error| Error::io(path, error))?;
+    let repository = Git::discover(source)?;
+    let _lock = repository.lock()?;
+    let target = repository.select(&path);
+    let materialized = crate::submodule_record::read(&target)?.filter(|record| {
+        record.policy == crate::SubmodulePolicy::MaterializePinned && !record.pins.is_empty()
+    });
+    if let Some(record) = &materialized {
+        crate::submodule_record::verify_children(&target, &record.pins, force)?;
+        if !force
+            && !target
+                .capture(target.command()?.args([
+                    "status",
+                    "--porcelain=v1",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none",
+                ]))?
+                .is_empty()
+        {
+            return Err(Error::DirtySource);
+        }
+    }
+    let mut command = repository.command()?;
+    command.args(["worktree", "remove"]);
+    if force || materialized.is_some() {
+        command.arg("--force");
+    }
+    repository.capture(command.arg("--").arg(dunce::simplified(&path)))?;
+    Ok(())
+}
