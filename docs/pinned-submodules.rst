@@ -8,7 +8,10 @@ materialization of clean, initialized direct dependencies::
         --submodules materialize-pinned
 
 Rust uses ``Policy { submodules: SubmodulePolicy::MaterializePinned, ..Policy::default() }``.
-The policy enum lives in ``cowtree.submodule_types``.
+The policy enum lives in ``cowtree_workspace``.
+
+Standalone ``add`` has a separate policy for independent writable Git children.
+See `standalone submodules <standalone-submodules.rst>`_.
 
 This mode places dependency files in Cowtree's private Git projection as regular
 source entries. It does not preserve nested Git repositories. Each dependency's

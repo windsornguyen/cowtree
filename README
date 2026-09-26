@@ -94,6 +94,12 @@ Standalone commands clone tracked files, not ignored build caches::
 ``--branch`` attaches an unused local branch. ``-b`` creates one. Removal keeps
 the branch. Add ``--help`` for options or ``--`` before option-like paths.
 
+Uninitialized submodules remain empty by default. Initialized children require
+``--submodules materialize-pinned`` to create independent child repositories at
+their pinned commits. ``--submodules reject`` retains blanket refusal.
+See `standalone submodules <docs/standalone-submodules.rst>`_ for local-object
+requirements, Git configuration, and cleanup semantics.
+
 Rust operations live in ``libcowtree``. For example:
 
 .. code-block:: rust

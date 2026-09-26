@@ -21,6 +21,7 @@ The supported commands are::
 
     cowtree add [-b NEW_BRANCH | --branch EXISTING_BRANCH | --detach]
                 [--committed] [--lock] [--reason TEXT] [--json]
+                [--submodules reject|leave-uninitialized|materialize-pinned]
                 [--] path [commit-ish]
     cowtree list [--json] [--] [source]
     cowtree remove [--force] [--json] [--] path
@@ -129,11 +130,15 @@ Requirements
 
 In the default checkout mode, the source must be a normal, complete checkout
 with a committed ``HEAD`` and no tracked changes. A linked worktree can serve
-as the source. Sparse checkouts,
-submodules, and index entries marked assume-unchanged or skip-worktree are
+as the source. Sparse checkouts and index entries marked assume-unchanged or skip-worktree are
 rejected. Untracked and ignored files do not affect eligibility and are not
 copied. Tracked regular files, executable modes, and symlinks are supported.
 Symlinks retain their original link text and normal Git checkout semantics.
+
+Submodule handling is selected by ``--submodules``. The default leaves
+uninitialized children empty and refuses initialized children. See
+`standalone submodules <standalone-submodules.rst>`_ for independent pinned
+repositories and cleanup rules.
 
 The requested commit must equal the source's current commit unless committed
 mode is selected. A branch requested with ``-b`` must not already exist.
@@ -183,7 +188,11 @@ CLI category, while the typed error retains its original cause.
    * - ``sparse_checkout``
      - The source uses sparse checkout.
    * - ``submodule_unsupported``
-     - The source commit contains a submodule.
+     - The selected commit contains a submodule under the reject policy.
+   * - ``submodule_initialized``
+     - The default leave-uninitialized policy encountered an initialized source child.
+   * - ``submodule_unavailable``
+     - A pinned child lacks local objects or violates repository isolation requirements.
    * - ``unsupported_mode``
      - The source commit contains an unsupported tracked file mode.
    * - ``different_filesystem``

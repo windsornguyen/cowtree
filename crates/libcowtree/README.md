@@ -18,6 +18,15 @@ cloning, metadata preservation, and cleanup of the state it creates.
   and content or metadata capture. These currently require Unix.
 - `inspect_path` tests actual clone support and independent writes.
 
+`AddRequest.submodules` selects rejection, empty uninitialized children (the
+default), or independent pinned child repositories. `submodules.rs` plans the
+children from immutable gitlinks. `submodule_objects.rs` CoW-clones local object
+data into fresh metadata. `submodule_record.rs` owns per-worktree policy and
+activation records. Managed read-only dependency capture remains separate.
+
+See [standalone submodules](../../docs/standalone-submodules.rst) for the Git
+worktree configuration change, refusal cases, and removal contract.
+
 An add owns only its new directories, registration, and newly created branch.
 Rollback retires the registration before deleting that branch with an expected
 commit ID. If another writer moves the branch, rollback preserves it and reports
