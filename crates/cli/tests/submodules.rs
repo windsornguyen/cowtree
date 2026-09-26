@@ -44,7 +44,9 @@ fn invariant_policy_refusals_leave_no_destination() -> Result {
         assert!(!output.status.success());
         let failure: Failure = serde_json::from_slice(&output.stderr)?;
         assert_eq!(failure.code, expected);
-        assert!(failure.message.contains("vendor/child"));
+        // The message names the child's filesystem path, spelled with the platform's separator.
+        let child = Path::new("vendor").join("child");
+        assert!(failure.message.contains(child.to_str().ok_or("path")?));
         assert!(!fixture.target().exists());
     }
     Ok(())
@@ -332,10 +334,9 @@ fn invariant_existing_worktree_config_is_not_activated_implicitly() -> Result {
     assert!(!output.status.success());
     assert!(!fixture.target().exists());
     assert_eq!(fs::read(&dormant)?, b"[core]\nworktree = /must-not-activate\n");
-    assert_eq!(
-        git(&fixture.source, &["rev-parse", "--show-toplevel"])?,
-        fixture.source.canonicalize()?.to_str().ok_or("path")?
-    );
+    // Git prints `R:/...` on Windows where canonicalize returns `\\?\R:\...`: compare paths.
+    let toplevel = PathBuf::from(git(&fixture.source, &["rev-parse", "--show-toplevel"])?);
+    assert_eq!(toplevel.canonicalize()?, fixture.source.canonicalize()?);
     Ok(())
 }
 
