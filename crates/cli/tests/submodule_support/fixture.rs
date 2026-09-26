@@ -17,14 +17,18 @@ pub struct Fixture {
     pub pin: String,
 }
 
-pub fn git(root: &Path, args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
+/// Hide the machine's system and global Git configuration from a command. Git for Windows sets
+/// `core.autocrlf=true` system-wide, which would rewrite the checked-out bytes the tests compare,
+/// and Cowtree's own Git calls inherit the same environment.
+fn without_machine_config(command: &mut Command) -> &mut Command {
+    command
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", if cfg!(windows) { "NUL" } else { "/dev/null" })
-        .output()?;
+}
+
+pub fn git(root: &Path, args: &[&str]) -> Result<String> {
+    let output =
+        without_machine_config(Command::new("git").arg("-C").arg(root).args(args)).output()?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
     }
@@ -87,10 +91,9 @@ impl Fixture {
         self.directory.path().join("target")
     }
     pub fn cowtree(&self, args: &[&str]) -> Result<Output> {
-        Ok(Command::new(env!("CARGO_BIN_EXE_cowtree"))
-            .current_dir(&self.source)
-            .args(args)
-            .output()?)
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cowtree"));
+        command.current_dir(&self.source).args(args);
+        Ok(without_machine_config(&mut command).output()?)
     }
     pub fn add(&self, args: &[&str]) -> Result<Output> {
         let target = self.target();
