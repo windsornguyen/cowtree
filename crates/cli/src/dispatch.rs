@@ -112,10 +112,11 @@ fn execute(options: Arguments) -> Result<u8, Failure> {
             }
         }
         Some(Operation::Doctor { directory }) => {
-            let report = inspect_path(directory.as_deref().unwrap_or(Path::new(".")))?;
+            let mut report = inspect_path(directory.as_deref().unwrap_or(Path::new(".")))?;
+            report.submodules = cowtree::submodule_policy(&report.path)?;
             let code = if report.supported() { 0 } else { 1 };
             if options.json {
-                output::success("doctor", report)?;
+                output::success("doctor", &report)?;
             } else if let Some(tool) = report.clone_tool {
                 writeln!(
                     io::stdout().lock(),
@@ -130,6 +131,9 @@ fn execute(options: Arguments) -> Result<u8, Failure> {
                     report.path.display(),
                     report.reason
                 )?;
+            }
+            if !options.json {
+                writeln!(io::stdout().lock(), "submodules: {}", report.submodules)?;
             }
             return Ok(code);
         }

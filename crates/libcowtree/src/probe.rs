@@ -13,6 +13,7 @@ use std::{
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
+    pub submodules: crate::SubmodulePolicy,
     #[serde(serialize_with = "crate::path_json::path")]
     pub path: PathBuf,
     pub filesystem: &'static str,
@@ -54,12 +55,14 @@ pub fn inspect_path(path: &Path) -> WorktreeResult<DoctorReport> {
     };
     match result {
         Ok(()) => Ok(DoctorReport {
+            submodules: crate::SubmodulePolicy::default(),
             path,
             filesystem: backend.0,
             clone_tool: Some(backend.1),
             reason: None,
         }),
         Err(WorkflowError::Native(Error::UnsupportedPlatform)) => Ok(DoctorReport {
+            submodules: crate::SubmodulePolicy::default(),
             path,
             filesystem: "unsupported",
             clone_tool: None,
@@ -69,6 +72,7 @@ pub fn inspect_path(path: &Path) -> WorktreeResult<DoctorReport> {
             if crate::error::clone_unavailable(&source) =>
         {
             Ok(DoctorReport {
+                submodules: crate::SubmodulePolicy::default(),
                 path,
                 filesystem: backend.0,
                 clone_tool: None,

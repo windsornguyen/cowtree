@@ -85,8 +85,7 @@ fn prepare(repository: &Git, request: &AddRequest) -> Result<(PathBuf, Snapshot)
                 _ => request.revision.clone(),
             };
             let commit = repository.resolve(&revision)?;
-            let entries = repository.entries(OsStr::new(&commit))?;
-            Snapshot { commit, entries }
+            repository.tree(commit)?
         }
     };
     check_branch(repository, request, &snapshot)?;
@@ -157,6 +156,7 @@ struct Creation<'a> {
     target: PathBuf,
     created: Vec<PathBuf>,
     branch_owned: bool,
+    children: Vec<crate::submodules::Child>,
     #[cfg(test)]
     hook: Option<&'a dyn Fn(Phase) -> Result<()>>,
 }
@@ -174,6 +174,12 @@ enum Phase {
 impl<'a> Creation<'a> {
     fn new(repository: &'a Git, request: &'a AddRequest) -> Result<Self> {
         let (target, snapshot) = prepare(repository, request)?;
+        let children = crate::submodules::plan(
+            repository,
+            &snapshot,
+            request.submodules,
+            request.source_mode,
+        )?;
         Ok(Self {
             repository,
             request,
@@ -181,6 +187,7 @@ impl<'a> Creation<'a> {
             target,
             created: Vec::new(),
             branch_owned: false,
+            children,
             #[cfg(test)]
             hook: None,
         })
@@ -218,6 +225,29 @@ impl<'a> Creation<'a> {
         self.register()?;
         #[cfg(test)]
         self.checkpoint(Phase::BeforeCopy)?;
+        self.populate()?;
+        let target = self.repository.select(&self.target);
+        let mut tree = self.verify()?;
+        crate::submodule_record::write(
+            &target,
+            self.request.submodules,
+            &self.snapshot.submodules,
+        )?;
+        self.request.cancellation.check()?;
+        if self.request.lock == Lock::Release {
+            self.repository.capture(
+                self.repository
+                    .command()?
+                    .args(["worktree", "unlock"])
+                    .arg(dunce::simplified(&self.target)),
+            )?;
+            tree.locked = false;
+            tree.reason = None;
+        }
+        Ok(tree)
+    }
+
+    fn populate(&self) -> Result<()> {
         match self.request.source_mode {
             SourceMode::Checkout => populate_tracked(
                 &self.repository.root,
@@ -231,22 +261,22 @@ impl<'a> Creation<'a> {
                     crate::populate::parents(&self.snapshot.entries)?,
                     &self.request.cancellation,
                 )?;
+                crate::submodules::directories(&self.target, &self.snapshot.submodules)?;
                 self.repository.select(&self.target).checkout(&self.snapshot.commit)?;
             }
         }
-        let mut tree = self.verify()?;
-        self.request.cancellation.check()?;
-        if self.request.lock == Lock::Release {
-            self.repository.capture(
-                self.repository
-                    .command()?
-                    .args(["worktree", "unlock"])
-                    .arg(dunce::simplified(&self.target)),
-            )?;
-            tree.locked = false;
-            tree.reason = None;
+        if self.request.source_mode == SourceMode::Checkout {
+            crate::submodules::directories(&self.target, &self.snapshot.submodules)?;
         }
-        Ok(tree)
+        let target = self.repository.select(&self.target);
+        crate::submodules::populate(
+            &target,
+            &self.children,
+            self.request.source_mode,
+            &self.request.cancellation,
+        )?;
+        crate::submodule_record::activate(&target, &self.children)?;
+        Ok(())
     }
 
     fn reserve(&mut self) -> Result<()> {

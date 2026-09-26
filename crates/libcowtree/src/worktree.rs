@@ -18,6 +18,26 @@ pub enum SourceMode {
     Committed,
 }
 
+/// Standalone submodule handling, independent of managed read-only snapshots.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SubmodulePolicy {
+    Reject,
+    #[default]
+    LeaveUninitialized,
+    MaterializePinned,
+}
+
+impl std::fmt::Display for SubmodulePolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Reject => "reject",
+            Self::LeaveUninitialized => "leave-uninitialized",
+            Self::MaterializePinned => "materialize-pinned",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Lock {
     Release,
@@ -48,6 +68,7 @@ pub struct AddRequest {
     pub branch: Branch,
     pub revision: OsString,
     pub source_mode: SourceMode,
+    pub submodules: SubmodulePolicy,
     pub lock: Lock,
 }
 
@@ -61,6 +82,7 @@ impl AddRequest {
             branch: Branch::Detached,
             revision: "HEAD".into(),
             source_mode: SourceMode::Checkout,
+            submodules: SubmodulePolicy::default(),
             lock: Lock::Release,
         }
     }

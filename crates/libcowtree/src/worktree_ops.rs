@@ -16,9 +16,28 @@ pub fn remove_worktree(path: &Path, source: Option<&Path>, force: bool) -> Resul
     let path = std::path::absolute(path).map_err(|error| Error::io(path, error))?;
     let repository = Git::discover(source)?;
     let _lock = repository.lock()?;
+    let target = repository.select(&path);
+    let materialized = crate::submodule_record::read(&target)?.filter(|record| {
+        record.policy == crate::SubmodulePolicy::MaterializePinned && !record.pins.is_empty()
+    });
+    if let Some(record) = &materialized {
+        crate::submodule_record::verify_children(&target, &record.pins, force)?;
+        if !force
+            && !target
+                .capture(target.command()?.args([
+                    "status",
+                    "--porcelain=v1",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none",
+                ]))?
+                .is_empty()
+        {
+            return Err(Error::DirtySource);
+        }
+    }
     let mut command = repository.command()?;
     command.args(["worktree", "remove"]);
-    if force {
+    if force || materialized.is_some() {
         command.arg("--force");
     }
     repository.capture(command.arg("--").arg(dunce::simplified(&path)))?;

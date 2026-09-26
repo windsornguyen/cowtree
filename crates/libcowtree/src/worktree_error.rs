@@ -22,6 +22,14 @@ pub enum WorktreeError {
     SparseCheckout,
     #[error("submodules are unsupported: {path}")]
     Submodule { path: PathBuf },
+    #[error("submodule is initialized: {path}")]
+    SubmoduleInitialized { path: PathBuf },
+    #[error("submodule cannot be materialized at {path}: {reason}")]
+    SubmoduleState { path: PathBuf, reason: String },
+    #[error("submodule objects unavailable at {path}: {source}")]
+    SubmoduleObjects { path: PathBuf, source: Box<Self> },
+    #[error("invalid submodule record at {path}: {source}")]
+    SubmoduleRecord { path: PathBuf, source: serde_json::Error },
     #[error("unsupported Git file mode at {path}")]
     UnsupportedMode { path: PathBuf },
     #[error("destination already exists: {path}")]
@@ -76,6 +84,10 @@ impl WorktreeError {
             Self::HeadMismatch => "head_mismatch",
             Self::SparseCheckout => "sparse_checkout",
             Self::Submodule { .. } => "submodule_unsupported",
+            Self::SubmoduleInitialized { .. } => "submodule_initialized",
+            Self::SubmoduleState { .. }
+            | Self::SubmoduleObjects { .. }
+            | Self::SubmoduleRecord { .. } => "submodule_unavailable",
             Self::UnsupportedMode { .. } => "unsupported_mode",
             Self::DestinationExists { .. }
             | Self::InvalidRequest { .. }

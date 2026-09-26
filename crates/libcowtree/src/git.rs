@@ -2,9 +2,7 @@
 
 //! Standalone admission and Git worktree records.
 
-use crate::{
-    FileMode, GitField, TrackedFile, Worktree, WorktreeError as Error, WorktreeResult as Result,
-};
+use crate::{GitField, Worktree, WorktreeError as Error, WorktreeResult as Result};
 use cowtree_git::{Client, checked, decode_path};
 use std::{
     ffi::OsStr,
@@ -14,10 +12,7 @@ use std::{
 
 pub(crate) struct Git(Client);
 
-pub(crate) struct Snapshot {
-    pub commit: String,
-    pub entries: Vec<TrackedFile>,
-}
+pub(crate) use crate::git_tree::Snapshot;
 
 impl Deref for Git {
     type Target = Client;
@@ -27,7 +22,6 @@ impl Deref for Git {
 }
 
 impl Git {
-    #[cfg(test)]
     pub(crate) fn at(root: &Path) -> Self {
         Self(Client::at(root))
     }
@@ -55,12 +49,12 @@ impl Git {
     pub(crate) fn snapshot(&self) -> Result<Snapshot> {
         self.require_full_checkout()?;
         let commit = self.head()?;
-        let entries = self.entries(OsStr::new(&commit))?;
+        let snapshot = self.tree(commit)?;
         self.require_visible_index()?;
         if !self.status()?.is_empty() {
             return Err(Error::DirtySource);
         }
-        Ok(Snapshot { commit, entries })
+        Ok(snapshot)
     }
 
     pub(crate) fn require_visible_index(&self) -> Result<()> {
@@ -130,11 +124,6 @@ impl Git {
         }
     }
 
-    pub(crate) fn entries(&self, revision: &OsStr) -> Result<Vec<TrackedFile>> {
-        let data = self.capture(self.command()?.args(["ls-tree", "-r", "-z"]).arg(revision))?;
-        data.split(|byte| *byte == 0).filter(|record| !record.is_empty()).map(parse_entry).collect()
-    }
-
     pub(crate) fn worktrees(&self) -> Result<Vec<Worktree>> {
         let data = self.capture(self.command()?.args(["worktree", "list", "--porcelain", "-z"]))?;
         let mut records = Vec::new();
@@ -169,26 +158,6 @@ impl Git {
         }
         Ok(None)
     }
-}
-
-fn parse_entry(record: &[u8]) -> Result<TrackedFile> {
-    let tab = record
-        .iter()
-        .position(|byte| *byte == b'\t')
-        .ok_or(Error::GitResponse { field: GitField::TreeEntry })?;
-    let path = decode_path(record[tab + 1..].to_vec())?;
-    let mode = record[..tab]
-        .split(|byte| *byte == b' ')
-        .next()
-        .ok_or(Error::GitResponse { field: GitField::TreeMode })?;
-    let mode = match mode {
-        b"100644" => FileMode::Regular,
-        b"100755" => FileMode::Executable,
-        b"120000" => FileMode::Symlink,
-        b"160000" => return Err(Error::Submodule { path }),
-        _ => return Err(Error::UnsupportedMode { path }),
-    };
-    Ok(TrackedFile::new(path, mode)?)
 }
 
 fn parse_worktree(fields: &[&[u8]]) -> Result<Worktree> {

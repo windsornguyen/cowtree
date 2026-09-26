@@ -6,7 +6,7 @@ use clap::{
     Args, Parser, Subcommand,
     builder::{NonEmptyStringValueParser, OsStringValueParser, TypedValueParser},
 };
-use cowtree::{AddRequest, Branch, Lock, SourceMode};
+use cowtree::{AddRequest, Branch, Lock, SourceMode, SubmodulePolicy};
 use std::{ffi::OsString, path::PathBuf};
 
 #[derive(Parser)]
@@ -60,6 +60,8 @@ pub(crate) struct Add {
     detach: bool,
     #[arg(long)]
     committed: bool,
+    #[arg(long, value_enum, default_value = "leave-uninitialized")]
+    submodules: Submodules,
     #[arg(long)]
     lock: bool,
     #[arg(long, requires = "lock", value_parser = NonEmptyStringValueParser::new())]
@@ -91,7 +93,19 @@ impl Add {
         }
         request.source_mode =
             if self.committed { SourceMode::Committed } else { SourceMode::Checkout };
+        request.submodules = match self.submodules {
+            Submodules::Reject => SubmodulePolicy::Reject,
+            Submodules::MaterializePinned => SubmodulePolicy::MaterializePinned,
+            Submodules::LeaveUninitialized => SubmodulePolicy::LeaveUninitialized,
+        };
         request.lock = if self.lock { Lock::Retain { reason: self.reason } } else { Lock::Release };
         request
     }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Submodules {
+    Reject,
+    LeaveUninitialized,
+    MaterializePinned,
 }

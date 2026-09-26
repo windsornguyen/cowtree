@@ -38,7 +38,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Native CLI build failed" }
     & target\release\cowtree.exe doctor R:\
     if ($LASTEXITCODE -ne 0) { throw "Native CLI probe failed" }
-    cargo test --locked -p cowtree-cli --test standalone
+    cargo test --locked -p cowtree-cli --test standalone --test submodules
     if ($LASTEXITCODE -ne 0) { throw "Native executable checks failed" }
 } finally {
     $env:TEMP = $temporary
