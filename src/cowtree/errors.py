@@ -10,6 +10,7 @@ class CowtreeErrorCode(str, Enum):
     HEAD_MISMATCH = "head_mismatch"
     SPARSE_CHECKOUT = "sparse_checkout"
     SUBMODULE_UNSUPPORTED = "submodule_unsupported"
+    SUBMODULE_INITIALIZED = "submodule_initialized"
     DEPENDENCY_CHANGED = "dependency_changed"
     UNSUPPORTED_MODE = "unsupported_mode"
     COMMAND_FAILED = "command_failed"

@@ -38,7 +38,10 @@ class CommittedSource:
         commit = repository.capture(
             args=["rev-parse", "--verify", "--end-of-options", f"{reference}^{{commit}}"]
         ).removesuffix("\n")
-        parse_tracked_files(data=repository.capture(args=["ls-tree", "-r", "-z", commit]))
+        parse_tracked_files(
+            data=repository.capture(args=["ls-tree", "-r", "-z", commit]),
+            submodules=request.submodules,
+        )
         result = cls(repository=repository, commit=commit)
         return result
 

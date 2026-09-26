@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import errno
 import os
 from pathlib import Path
@@ -11,7 +12,8 @@ import pytest
 from cowtree.core import add_worktree, inspect_path, remove_worktree
 from cowtree.errors import CowtreeError, CowtreeErrorCode
 from cowtree.exec import CommandRunner
-from cowtree.types import WorktreeAddRequest
+from cowtree.submodule_types import SubmodulePolicy
+from cowtree.types import SourceMode, WorktreeAddRequest
 
 from .conftest import Repository
 
@@ -183,17 +185,64 @@ def test_invariant_sparse_sources_are_refused(repository: Repository, tmp_path: 
     repo.assert_absent(target=target, branch="sparse")
 
 
-def test_invariant_submodule_sources_are_refused(repository: Repository, tmp_path: Path) -> None:
-    repo = repository
+def declare_gitlink(repo: Repository) -> str:
+    """Commit a gitlink at `module` that the source never initializes, as a fresh clone has it."""
     commit = repo.git("rev-parse", "HEAD").stdout.strip()
+    (repo.path / ".gitmodules").write_bytes(
+        b'[submodule "module"]\n\tpath = module\n\turl = ./module\n'
+    )
+    repo.git("add", ".gitmodules")
     repo.git("update-index", "--add", "--cacheinfo", f"160000,{commit},module")
     repo.git("commit", "-qm", "gitlink")
     (repo.path / "module").mkdir()
+    return commit
+
+
+def test_invariant_submodule_sources_are_refused_under_reject(
+    repository: Repository, tmp_path: Path
+) -> None:
+    repo = repository
+    declare_gitlink(repo)
     target = tmp_path / "submodule"
+    request = replace(
+        repo.add_request(target=target, branch="submodule"), submodules=SubmodulePolicy.REJECT
+    )
     with pytest.raises(CowtreeError) as error:
-        add_worktree(request=repo.add_request(target=target, branch="submodule"))
+        add_worktree(request=request)
     assert error.value.code == CowtreeErrorCode.SUBMODULE_UNSUPPORTED
     repo.assert_absent(target=target, branch="submodule")
+
+
+def test_invariant_uninitialized_submodules_stay_empty_by_default(
+    repository: Repository, tmp_path: Path
+) -> None:
+    """An uninitialized gitlink clones as an empty directory whose index keeps the commit."""
+    repo = repository
+    commit = declare_gitlink(repo)
+    for mode in (SourceMode.CHECKOUT, SourceMode.COMMIT):
+        target = tmp_path / mode.value
+        request = replace(repo.add_request(target=target), detach=True, source_mode=mode)
+        add_worktree(request=request)
+        assert (target / "module").is_dir()
+        assert not any((target / "module").iterdir())
+        status = repo.git("-C", str(target), "submodule", "status").stdout
+        assert status == f"-{commit} module\n"
+        assert repo.git("-C", str(target), "status", "--porcelain").stdout == ""
+
+
+def test_invariant_initialized_submodules_are_refused_by_default(
+    repository: Repository, tmp_path: Path
+) -> None:
+    """The default policy copies no submodule state, so a checked-out one is refused."""
+    repo = repository
+    declare_gitlink(repo)
+    (repo.path / "module" / "file.txt").write_bytes(b"checked out\n")
+    target = tmp_path / "initialized"
+    with pytest.raises(CowtreeError) as error:
+        add_worktree(request=repo.add_request(target=target, branch="initialized"))
+    assert error.value.code == CowtreeErrorCode.SUBMODULE_INITIALIZED
+    assert "module" in error.value.message
+    repo.assert_absent(target=target, branch="initialized")
 
 
 def test_invariant_failed_revision_does_not_leave_a_branch(

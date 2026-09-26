@@ -17,6 +17,7 @@ from inline_tests import test
 from cowtree.cli_output import Failure, Success, json_requested
 from cowtree.core import add_worktree, inspect_path, list_all_worktrees, remove_worktree
 from cowtree.errors import CowtreeError, CowtreeErrorCode
+from cowtree.submodule_types import SubmodulePolicy
 from cowtree.types import Arguments, Command, SourceMode, WorktreeAddRequest
 from cowtree.version import VersionInfo
 
@@ -98,6 +99,14 @@ class CowtreeCLI:
         self.add_parser.add_argument(
             "--reason", metavar="TEXT", help="lock reason; requires --lock"
         )
+        self.add_parser.add_argument(
+            "--submodules",
+            type=SubmodulePolicy,
+            choices=[SubmodulePolicy.REJECT, SubmodulePolicy.LEAVE_UNINITIALIZED],
+            default=SubmodulePolicy.LEAVE_UNINITIALIZED,
+            help="leave-uninitialized (default) keeps gitlinks as empty directories and refuses "
+            "initialized ones; reject refuses any gitlink",
+        )
         self.add_parser.add_argument("path", type=Path)
         self.add_parser.add_argument("commitish", nargs="?", default="HEAD", metavar="commit-ish")
 
@@ -175,6 +184,7 @@ class CowtreeCLI:
                 branch=options.branch,
                 existing_branch=options.existing_branch,
                 source_mode=options.source_mode,
+                submodules=options.submodules,
                 commitish=options.commitish,
                 detach=options.detach,
                 lock=options.lock,

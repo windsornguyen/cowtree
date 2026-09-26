@@ -99,6 +99,8 @@ class GitRepository:
         commit = self.head()
         data = self.capture(args=["ls-tree", "-r", "-z", commit])
         tree = parse_tree(data=data, submodules=submodules)
+        if submodules is SubmodulePolicy.LEAVE_UNINITIALIZED:
+            self.require_uninitialized(pins=tree.submodules)
         flags = self.capture(args=["ls-files", "-v", "-z"])
         for record in flags.split("\0"):
             if not record:
@@ -117,6 +119,20 @@ class GitRepository:
             )
         checkout = Checkout(commit=commit, files=tree.files, submodules=tree.submodules)
         return checkout
+
+    def require_uninitialized(self, pins: tuple[PinnedSubmodule, ...]) -> None:
+        """Refuse a gitlink whose source path holds anything, since none of it would be copied."""
+        for pin in pins:
+            path = self.path / pin.path
+            if path.is_symlink() or (path.exists() and not path.is_dir()):
+                raise CowtreeError(
+                    CowtreeErrorCode.SUBMODULE_INITIALIZED,
+                    f"submodule path is not a directory: {pin.path}",
+                )
+            if path.is_dir() and any(path.iterdir()):
+                raise CowtreeError(
+                    CowtreeErrorCode.SUBMODULE_INITIALIZED, f"submodule is initialized: {pin.path}"
+                )
 
     def worktrees(self) -> list[Worktree]:
         """Read every worktree registration in the repository."""
@@ -160,9 +176,11 @@ def resolve_path(path: Path) -> Path:
     return resolved
 
 
-def parse_tracked_files(data: str) -> tuple[TrackedFile, ...]:
+def parse_tracked_files(
+    data: str, submodules: SubmodulePolicy = SubmodulePolicy.REJECT
+) -> tuple[TrackedFile, ...]:
     """Decode a Git tree into supported file modes and byte-preserving paths."""
-    files = parse_tree(data=data, submodules=SubmodulePolicy.REJECT).files
+    files = parse_tree(data=data, submodules=submodules).files
     return files
 
 
@@ -173,7 +191,7 @@ class GitTree:
 
 
 def parse_tree(data: str, submodules: SubmodulePolicy) -> GitTree:
-    """Preserve gitlinks only when the caller explicitly selects pinned materialization."""
+    """Preserve gitlinks only under a policy that admits them."""
     if not isinstance(submodules, SubmodulePolicy):
         raise CowtreeError(CowtreeErrorCode.INVALID_ARGUMENTS, "invalid submodule policy")
     files: list[TrackedFile] = []
@@ -190,7 +208,7 @@ def parse_tree(data: str, submodules: SubmodulePolicy) -> GitTree:
                         CowtreeErrorCode.SUBMODULE_UNSUPPORTED,
                         f"submodules are unsupported: {path}",
                     )
-                case SubmodulePolicy.MATERIALIZE_PINNED:
+                case SubmodulePolicy.LEAVE_UNINITIALIZED | SubmodulePolicy.MATERIALIZE_PINNED:
                     pass
                 case _:
                     raise CowtreeError(

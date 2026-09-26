@@ -11,7 +11,7 @@ from pathlib import Path
 from inline_tests import test
 
 from cowtree.errors import CowtreeError, CowtreeErrorCode
-from cowtree.submodule_types import PinnedSubmodule
+from cowtree.submodule_types import PinnedSubmodule, SubmodulePolicy
 
 
 # --- Command inputs ---
@@ -49,6 +49,7 @@ class Arguments(argparse.Namespace):
     json: bool = False
     force: bool = False
     source_mode: SourceMode = SourceMode.CHECKOUT
+    submodules: SubmodulePolicy = SubmodulePolicy.LEAVE_UNINITIALIZED
     version: bool = False
 
 
@@ -123,12 +124,22 @@ class WorktreeAddRequest:
     reason: str | None = None
     existing_branch: str | None = None
     source_mode: SourceMode = SourceMode.CHECKOUT
+    submodules: SubmodulePolicy = SubmodulePolicy.LEAVE_UNINITIALIZED
 
     def __post_init__(self) -> None:
         """Reject invalid input fields before starting any filesystem operation."""
         if not isinstance(self.source_mode, SourceMode):
             raise CowtreeError(
                 CowtreeErrorCode.INVALID_ARGUMENTS, "source_mode must be a SourceMode"
+            )
+        if not isinstance(self.submodules, SubmodulePolicy):
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS, "submodules must be a SubmodulePolicy"
+            )
+        if self.submodules is SubmodulePolicy.MATERIALIZE_PINNED:
+            raise CowtreeError(
+                CowtreeErrorCode.INVALID_ARGUMENTS,
+                "add supports reject and leave-uninitialized; use workspace init to materialize",
             )
         for name, path in (("path", self.path), ("source", self.source)):
             if path is None and name == "source":

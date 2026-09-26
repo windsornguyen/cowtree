@@ -118,7 +118,7 @@ class WorktreeCreation:
                 CowtreeErrorCode.INVALID_ARGUMENTS, f"destination already exists: {target}"
             )
         target = resolve_path(path=target)
-        checkout = repository.snapshot()
+        checkout = repository.snapshot(submodules=request.submodules)
         requested = repository.capture(
             args=[
                 "rev-parse",
@@ -227,6 +227,9 @@ class WorktreeCreation:
         """Populate only paths recorded in the pinned source tree."""
         for entry in self.checkout.files:
             self.copy_file(entry=entry)
+        # An uninitialized gitlink is an empty directory; the index records its commit.
+        for pin in self.checkout.submodules:
+            (self.target / pin.path).mkdir(parents=True, exist_ok=True)
 
     def copy_file(self, entry: TrackedFile) -> None:
         """Clone one tracked file or preserve its symlink text."""
