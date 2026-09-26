@@ -17,28 +17,23 @@ pub struct Fixture {
     pub pin: String,
 }
 
-/// Hide the machine's system and global Git configuration from a command. Git for Windows sets
+/// Run a command with the machine's system and global Git configuration hidden. Git for Windows sets
 /// `core.autocrlf=true` system-wide, which would rewrite the checked-out bytes the tests compare,
 /// and Cowtree's own Git calls inherit the same environment.
-fn without_machine_config(command: &mut Command) -> &mut Command {
-    command.env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", empty_global_config())
-}
-
-/// An empty file to stand in for the global configuration. `NUL` is not a readable path for
-/// every Git for Windows build, so the tests name a real file on every platform.
-fn empty_global_config() -> &'static Path {
-    static EMPTY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    EMPTY.get_or_init(|| {
-        let path =
-            std::env::temp_dir().join(format!("cowtree-empty-gitconfig-{}", std::process::id()));
-        fs::write(&path, b"").expect("write the empty global Git configuration");
-        path
-    })
+///
+/// `NUL` is not readable by every Git for Windows build. Keep a real empty file alive until
+/// the command and its Git children finish.
+fn output_without_machine_config(command: &mut Command) -> Result<Output> {
+    let global_config = tempfile::NamedTempFile::new()?;
+    let output = command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", global_config.path())
+        .output()?;
+    Ok(output)
 }
 
 pub fn git(root: &Path, args: &[&str]) -> Result<String> {
-    let output =
-        without_machine_config(Command::new("git").arg("-C").arg(root).args(args)).output()?;
+    let output = output_without_machine_config(Command::new("git").arg("-C").arg(root).args(args))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
     }
@@ -103,7 +98,8 @@ impl Fixture {
     pub fn cowtree(&self, args: &[&str]) -> Result<Output> {
         let mut command = Command::new(env!("CARGO_BIN_EXE_cowtree"));
         command.current_dir(&self.source).args(args);
-        Ok(without_machine_config(&mut command).output()?)
+        let output = output_without_machine_config(&mut command)?;
+        Ok(output)
     }
     pub fn add(&self, args: &[&str]) -> Result<Output> {
         let target = self.target();
