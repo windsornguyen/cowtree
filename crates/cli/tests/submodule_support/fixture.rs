@@ -21,9 +21,19 @@ pub struct Fixture {
 /// `core.autocrlf=true` system-wide, which would rewrite the checked-out bytes the tests compare,
 /// and Cowtree's own Git calls inherit the same environment.
 fn without_machine_config(command: &mut Command) -> &mut Command {
-    command
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", if cfg!(windows) { "NUL" } else { "/dev/null" })
+    command.env("GIT_CONFIG_NOSYSTEM", "1").env("GIT_CONFIG_GLOBAL", empty_global_config())
+}
+
+/// An empty file to stand in for the global configuration. `NUL` is not a readable path for
+/// every Git for Windows build, so the tests name a real file on every platform.
+fn empty_global_config() -> &'static Path {
+    static EMPTY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    EMPTY.get_or_init(|| {
+        let path =
+            std::env::temp_dir().join(format!("cowtree-empty-gitconfig-{}", std::process::id()));
+        fs::write(&path, b"").expect("write the empty global Git configuration");
+        path
+    })
 }
 
 pub fn git(root: &Path, args: &[&str]) -> Result<String> {
