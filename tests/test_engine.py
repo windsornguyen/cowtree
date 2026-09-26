@@ -214,10 +214,10 @@ def test_invariant_submodule_sources_are_refused_under_reject(
 
 
 def test_invariant_uninitialized_submodules_stay_empty_by_default(
-    repository: Repository, tmp_path: Path
+    cow_repository: Repository, tmp_path: Path
 ) -> None:
     """An uninitialized gitlink clones as an empty directory whose index keeps the commit."""
-    repo = repository
+    repo = cow_repository
     commit = declare_gitlink(repo)
     for mode in (SourceMode.CHECKOUT, SourceMode.COMMIT):
         target = tmp_path / mode.value
