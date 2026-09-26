@@ -13,8 +13,8 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DECLARATION = ROOT / "crates/cowtree-metadata/schema.sql"
-GENERATED = ROOT / "crates/cowtree-metadata/src/schema.sql"
+DECLARATION = ROOT / "crates/metadata/schema.sql"
+GENERATED = ROOT / "crates/metadata/src/schema.sql"
 SQL_TOKENS = re.compile(
     r"--[^\n]*|/\*[\s\S]*?(?:\*/|$)|'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\""
     r"|`(?:``|[^`])*`|\[[^\]]*\]|(?P<word>[A-Za-z_][A-Za-z_0-9]*)"

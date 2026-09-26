@@ -14,7 +14,7 @@ build, and benchmark processes idle during measurement. Run from the repository
 root::
 
     git rev-parse HEAD
-    git diff -- crates/cowtree-metadata/src/durability.rs
+    git diff -- crates/metadata/src/durability.rs
     rustc -Vv
     df -h .
     RUSTC_WRAPPER='' cargo build --locked --release --example durability

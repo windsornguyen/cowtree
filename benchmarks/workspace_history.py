@@ -150,7 +150,7 @@ def runtime_identity() -> str:
         if name.startswith("cowtree.") and (filename := getattr(module, "__file__", None))
     }
     assert all(path.is_relative_to(repository / "src") for path in paths), "run with PYTHONPATH=src"
-    paths.update((repository / "crates/cowtree-metadata/src").glob("*"))
+    paths.update((repository / "crates/metadata/src").glob("*"))
     paths.add(repository / "Cargo.lock")
     paths.add(Path(__file__).resolve())
     digest = hashlib.sha256()

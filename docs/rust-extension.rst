@@ -28,7 +28,7 @@ Interfaces
 ``crates/libcowtree``
     Required native engine. Typed requests select source, branch, and lock
     policies. Errors retain the failed operation and operating-system cause.
-``crates/cowtree-cli``
+``crates/cli``
     Native ``cowtree`` and ``git-cowtree`` executables for standalone commands.
     Neither embeds Python nor starts a Python process.
 ``crates/cowtree-python``
@@ -40,7 +40,7 @@ Interfaces
     an installation failure, not a request to select another implementation.
 
 Managed publication and crash recovery still have a Python coordinator under
-``src/cowtree`` and a Rust SQLite authority in ``crates/cowtree-metadata``.
+``src/cowtree`` and a Rust SQLite authority in ``crates/metadata``.
 The native CLI does not expose ``workspace`` commands yet. Use the Python
 compatibility command for them. Moving that coordinator into ``libcowtree`` is
 remaining work, not an optional acceleration mode.

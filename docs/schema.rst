@@ -1,7 +1,7 @@
 Declarative SQLite schema
 =========================
 
-``crates/cowtree-metadata/schema.sql`` is the single editable database declaration.
+``crates/metadata/schema.sql`` is the single editable database declaration.
 Atlas Community generates ``src/schema.sql`` from it. The generated file has a
 watermark, the pinned generator revision, and the declaration's SHA-256 checksum.
 Edit the declaration and regenerate; do not edit the generated SQL.
@@ -52,8 +52,8 @@ Generate a review diff
 
 Save the declaration before editing, then generate a plan against the new source::
 
-    cp crates/cowtree-metadata/schema.sql /tmp/cowtree-before.sql
-    # Edit crates/cowtree-metadata/schema.sql.
+    cp crates/metadata/schema.sql /tmp/cowtree-before.sql
+    # Edit crates/metadata/schema.sql.
     uv run python scripts/schema.py diff --from-schema /tmp/cowtree-before.sql \
         > /tmp/cowtree-schema-diff.sql
 

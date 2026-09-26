@@ -220,7 +220,7 @@ schema or data migration. See `Declarative schema <schema.rst>`_.
 Use the managed API exclusively for its store. Calling raw authority mutations
 or editing client records bypasses its filesystem lock and is outside this contract.
 Standalone Rust metadata users have their own explicit protocol documented in
-the `crate reference <../crates/cowtree-metadata/README.md>`_.
+the `crate reference <../crates/metadata/README.md>`_.
 
 Filesystem boundary
 -------------------

@@ -27,7 +27,7 @@ Start
 Git and a filesystem with native cloning. Build the native CLI from this
 checkout with Rust 1.85+::
 
-    cargo install --locked --path crates/cowtree-cli
+    cargo install --locked --path crates/cli
     cowtree doctor .
     cowtree add -b scratch/idea ../wt/idea
     cowtree list --json
@@ -142,9 +142,9 @@ Where to look
     Python bindings, compatibility CLI, and managed filesystem coordination.
 `crates/libcowtree/ <crates/libcowtree/README.md>`_
     Required Rust engine for standalone operations and snapshot trees.
-`crates/cowtree-cli/ <crates/cowtree-cli/>`_
+`crates/cli/ <crates/cli/>`_
     Native cowtree and git-cowtree executables. No Python runtime.
-`crates/cowtree-metadata/ <crates/cowtree-metadata/README.md>`_
+`crates/metadata/ <crates/metadata/README.md>`_
     Rust service that records checkpoints and coordinates publication.
 `tests/ <tests/>`_, `integration/ <integration/>`_, `mounted/ <mounted/>`_, `windows/ <windows/>`_
     Command contracts, authority integration, real filesystems, and Windows.

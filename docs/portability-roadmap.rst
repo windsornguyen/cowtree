@@ -55,7 +55,7 @@ Managed implementation sequence
    blocking ``LockFileEx`` on a dedicated file. Workspace and leaf locks still
    need shared, exclusive, blocking, and nonblocking equivalents, including
    inherited ownership across supervised processes.
-   Rust ``crates/cowtree-metadata/src/objects.rs`` uses ``rustix::fs::flock`` on
+   Rust ``crates/metadata/src/objects.rs`` uses ``rustix::fs::flock`` on
    an open directory to exclude garbage collection during object publication.
    Give it a stable Windows lock object with the same lifetime and exclusion
    contract. `LockFileEx`_ is a candidate to qualify on a dedicated lock file;

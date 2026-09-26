@@ -114,7 +114,7 @@ management belong in callers such as Wingman.
 Rust metadata backend
 ---------------------
 
-Use Cargo for ``crates/cowtree-metadata`` dependencies and its committed lockfile.
+Use Cargo for ``crates/metadata`` dependencies and its committed lockfile.
 Python dependency management continues to use ``uv``. Rust changes must pass::
 
     cargo fmt --all --check

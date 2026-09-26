@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/cowtree-metadata", "crates/libcowtree", "crates/cowtree-cli", "crates/cowtree-python"]
+members = ["crates/metadata", "crates/libcowtree", "crates/cli", "crates/cowtree-python"]
 resolver = "2"
 
 [workspace.package]

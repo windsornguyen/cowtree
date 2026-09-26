@@ -330,7 +330,7 @@ Local metadata authority
 The Rust ``cowtree-metadata`` crate implements a single-host SQLite WAL
 metadata authority with fenced path reservations, immutable snapshots, retry
 receipts, and retention. Its library and JSON operation contracts are documented
-in `crates/cowtree-metadata/README.md <../crates/cowtree-metadata/README.md>`_.
+in `crates/metadata/README.md <../crates/metadata/README.md>`_.
 Run the complete publication example with::
 
     cargo run --locked -p cowtree-metadata --example publish
