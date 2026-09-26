@@ -276,7 +276,7 @@ fn terminal_interrupt_cannot_remove_the_validation_deadline() -> TestResult {
             "--",
             "/bin/sh",
             "-c",
-            "printf '%s' $$ > \"$1\"; sleep 20",
+            "printf '%s' $$ > \"$1.pending\" && mv \"$1.pending\" \"$1\"; sleep 20",
             "check",
             text(&marker)?,
         ])
