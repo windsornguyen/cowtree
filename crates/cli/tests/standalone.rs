@@ -162,7 +162,7 @@ fn committed_add_in_a_blobless_clone_fetches_missing_blobs_at_once() -> Result {
     let url = format!("file://{}", origin.display());
     let clone = directory.path().join("clone");
     let output = Command::new("git")
-        .args(["clone", "-q", "--filter=blob:none", &url])
+        .args(["clone", "-q", "--filter=blob:none", "-c", "core.autocrlf=false", &url])
         .arg(&clone)
         .output()?;
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
