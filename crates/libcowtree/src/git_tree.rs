@@ -4,7 +4,7 @@
 
 use crate::git::Git;
 use crate::{FileMode, GitField, TrackedFile, WorktreeError as Error, WorktreeResult as Result};
-use cowtree_git::decode_path;
+use cowtree_git::{checked, decode_path};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -27,6 +27,7 @@ pub(crate) struct Pin {
 
 impl Git {
     pub(crate) fn tree(&self, commit: String) -> Result<Snapshot> {
+        self.fetch_missing_blobs(&commit)?;
         let data = self.capture(self.command()?.args(["ls-tree", "-r", "-z"]).arg(&commit))?;
         let mut snapshot = Snapshot { commit, entries: Vec::new(), submodules: Vec::new() };
         for record in data.split(|byte| *byte == 0).filter(|record| !record.is_empty()) {
@@ -62,4 +63,63 @@ impl Git {
         }
         Ok(snapshot)
     }
+
+    /// Fetch the blobs of `commit` that a partial clone lacks, in one request.
+    ///
+    /// A blobless clone holds no blob it never checked out, and Git's lazy fetch asks for
+    /// one missing blob per round trip when the worktree's files are written. That took over
+    /// seven minutes on a 15,000-file repository. This is the request `git checkout` makes
+    /// for the same blobs. A blob is missing only when no checkout ever wrote it, so these
+    /// are the files this worktree writes rather than clones.
+    fn fetch_missing_blobs(&self, commit: &str) -> Result<()> {
+        let Some(remote) = self.promisor_remote()? else {
+            return Ok(());
+        };
+        let listed = self.capture(
+            self.command()?
+                .args(["rev-list", "--objects", "--no-walk", "--missing=print"])
+                .arg(commit),
+        )?;
+        let mut wanted = Vec::new();
+        for line in listed.split(|byte| *byte == b'\n') {
+            if let Some(object) = line.strip_prefix(b"?") {
+                wanted.extend_from_slice(object);
+                wanted.push(b'\n');
+            }
+        }
+        if wanted.is_empty() {
+            return Ok(());
+        }
+        self.input(
+            self.command()?
+                .args(["-c", "fetch.negotiationAlgorithm=noop", "fetch", "--no-tags"])
+                .args(["--no-write-fetch-head", "--recurse-submodules=no"])
+                .args(["--filter=blob:none", "--stdin"])
+                .arg(&remote.0),
+            &wanted,
+        )?;
+        Ok(())
+    }
+
+    /// The remote a partial clone fetches its missing objects from, if this is one.
+    fn promisor_remote(&self) -> Result<Option<Remote>> {
+        let output = self
+            .command()?
+            .args(["config", "--get-regexp", r"^remote\..+\.promisor$"])
+            .output()
+            .map_err(|error| Error::io(&self.root, error))?;
+        if output.status.code() == Some(1) {
+            return Ok(None);
+        }
+        let listed = checked(output)?;
+        let remote = listed.split(|byte| *byte == b'\n').find_map(|line| {
+            let setting = line.strip_prefix(b"remote.")?;
+            let name = setting.strip_suffix(b".promisor true")?;
+            String::from_utf8(name.to_vec()).ok().map(Remote)
+        });
+        Ok(remote)
+    }
 }
+
+/// Name of a Git remote, as `git remote` lists it.
+struct Remote(String);

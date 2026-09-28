@@ -123,3 +123,67 @@ fn standalone_clones_are_registered_private_and_removable() -> Result {
     );
     Ok(())
 }
+
+/// Run Git in `root` and return its trimmed standard output.
+fn git(root: &std::path::Path, arguments: &[&str]) -> Result<String> {
+    let output = Command::new("git").arg("-C").arg(root).args(arguments).output()?;
+    assert!(output.status.success(), "{arguments:?}: {}", String::from_utf8_lossy(&output.stderr));
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+/// Invariant: a committed add in a blobless clone fetches the commit's missing blobs in one
+/// explicit request and never depends on Git's lazy one-blob-per-request fetch, which takes
+/// minutes on a large repository.
+/// Witness: with `GIT_NO_LAZY_FETCH=1`, the add of a commit whose new blob is absent locally
+/// succeeds and writes that blob's bytes.
+#[test]
+fn committed_add_in_a_blobless_clone_fetches_missing_blobs_at_once() -> Result {
+    let directory = tempfile::tempdir()?;
+    if !cowtree::inspect_path(directory.path())?.supported() {
+        eprintln!("skip native filesystem");
+        return Ok(());
+    }
+    let origin = directory.path().join("origin");
+    fs::create_dir(&origin)?;
+    git(&origin, &["init", "-q", "-b", "main"])?;
+    for (key, value) in [
+        ("user.name", "Test"),
+        ("user.email", "test@example.invalid"),
+        ("commit.gpgsign", "false"),
+        ("uploadpack.allowFilter", "true"),
+        ("uploadpack.allowAnySHA1InWant", "true"),
+    ] {
+        git(&origin, &["config", key, value])?;
+    }
+    fs::write(origin.join("file"), b"base\n")?;
+    git(&origin, &["add", "."])?;
+    git(&origin, &["commit", "-qm", "base"])?;
+
+    let url = format!("file://{}", origin.display());
+    let clone = directory.path().join("clone");
+    let output = Command::new("git")
+        .args(["clone", "-q", "--filter=blob:none", "-c", "core.autocrlf=false", &url])
+        .arg(&clone)
+        .output()?;
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+
+    fs::write(origin.join("added"), b"only in the next commit\n")?;
+    git(&origin, &["add", "."])?;
+    git(&origin, &["commit", "-qm", "next"])?;
+    git(&clone, &["fetch", "-q", "origin"])?;
+    let next = git(&clone, &["rev-parse", "origin/main"])?;
+    let missing = git(&clone, &["rev-list", "--objects", "--no-walk", "--missing=print", &next])?;
+    assert!(missing.lines().any(|line| line.starts_with('?')), "fixture must lack a blob");
+
+    let target = directory.path().join("tree");
+    let output = Command::new(env!("CARGO_BIN_EXE_cowtree"))
+        .current_dir(&clone)
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .args(["add", "--committed", "-d"])
+        .arg(&target)
+        .arg(&next)
+        .output()?;
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(fs::read(target.join("added"))?, b"only in the next commit\n");
+    Ok(())
+}
